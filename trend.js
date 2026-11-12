@@ -131,8 +131,38 @@
     return { status: 'peak', month: top, count: counts[top], of: years.length, years: years };
   }
 
+  // ---------- F4: spike detector ----------
+  // Over the last 365 days, a spike day has at least `spikeMultiple` times the
+  // median day of that period. Spike days within 3 days of each other form one
+  // event. Events are listed newest first. The tool reports dates, never causes.
+  var SPIKE_LOOKBACK = 365, SPIKE_GAP = 3, RECENT_DAYS = 90;
+
+  function spikes(series, opts) {
+    var through = lastDay(series);
+    var w = windowValues(series, through, SPIKE_LOOKBACK);
+    var baseline = median(w.values);
+    var res = { baseline: baseline, multiple: opts.spikeMultiple, events: [], recentCount: 0, skipped: false };
+    if (baseline === 0 || baseline < opts.minViews) { res.skipped = true; return res; }
+    var cut = opts.spikeMultiple * baseline, cur = null;
+    w.values.forEach(function (v, i) {
+      if (v < cut) return;
+      var day = w.start + i * DAY;
+      if (cur && day - cur.end <= SPIKE_GAP * DAY) {
+        cur.end = day;
+        if (v > cur.peakViews) { cur.peakViews = v; cur.peakDay = day; }
+      } else {
+        cur = { start: day, end: day, peakDay: day, peakViews: v };
+        res.events.push(cur);
+      }
+    });
+    res.events.forEach(function (e) { e.multiple = e.peakViews / baseline; });
+    res.events.reverse();
+    res.recentCount = res.events.filter(function (e) { return e.peakDay >= through - (RECENT_DAYS - 1) * DAY; }).length;
+    return res;
+  }
+
   function analyze(series, opts) {
-    return { trend: trend(series, opts), season: seasonality(series) };
+    return { trend: trend(series, opts), season: seasonality(series), spikes: spikes(series, opts) };
   }
 
   var api = {
@@ -140,6 +170,7 @@
     dayMs: dayMs, parseDay: parseDay, isoDay: isoDay, compactDay: compactDay, niceDay: niceDay, niceRange: niceRange,
     seriesFromItems: seriesFromItems, lastDay: lastDay, windowValues: windowValues, median: median,
     trend: trend, seasonality: seasonality, SEASON_LIFT: SEASON_LIFT, SEASON_MIN_DAYS: SEASON_MIN_DAYS,
+    spikes: spikes, SPIKE_LOOKBACK: SPIKE_LOOKBACK, SPIKE_GAP: SPIKE_GAP, RECENT_DAYS: RECENT_DAYS,
     analyze: analyze
   };
   root.Trend = api;

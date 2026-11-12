@@ -14,11 +14,12 @@
   var STORE = { shortlist: 'bookingRadar.shortlist', settings: 'bookingRadar.settings' };
 
   // Editable thresholds (design assumptions, not fitted values).
-  var DEFAULTS = { risingPct: 20, fadingPct: 20, minViews: 20 };
+  var DEFAULTS = { risingPct: 20, fadingPct: 20, minViews: 20, spikeMultiple: 3 };
   var LIMITS = {
     risingPct: { min: 1, max: 500, label: 'Rising threshold' },
     fadingPct: { min: 1, max: 99, label: 'Fading threshold' },
-    minViews: { min: 0, max: 100000, label: 'Minimum traffic' }
+    minViews: { min: 0, max: 100000, label: 'Minimum traffic' },
+    spikeMultiple: { min: 1.5, max: 50, label: 'Spike multiple' }
   };
 
   var state = { rows: [], busy: false, settings: null };
@@ -66,6 +67,15 @@
     return 'https://pageviews.wmcloud.org/?' + new URLSearchParams({
       project: 'en.wikipedia.org', platform: 'all-access', agent: 'user',
       start: Trend.isoDay(startMs), end: Trend.isoDay(endMs), pages: title.replace(/ /g, '_')
+    }).toString();
+  }
+
+  // Edit history listed backwards from one week after the spike, so the edits
+  // made around the spike are at the top. The booker reads what happened there.
+  function historyUrl(title, peakDay) {
+    return WIKI + '/w/index.php?' + new URLSearchParams({
+      title: title.replace(/ /g, '_'), action: 'history', limit: '50',
+      offset: Trend.compactDay(peakDay + 7 * Trend.DAY) + '000000'
     }).toString();
   }
 
@@ -259,7 +269,26 @@
   }
 
   // ---------- Rendering ----------
-  var COLUMNS = ['#', 'Artist', 'Trend (F1)', 'Median views per day (F2)', 'Seasonal peak (F3)', 'Data'];
+  var COLUMNS = ['#', 'Artist', 'Trend (F1)', 'Median views per day (F2)', 'Seasonal peak (F3)', 'Spikes, last 12 months (F4)', 'Data'];
+
+  function spikesCell(row) {
+    if (!row.analysis) return [];
+    var sp = row.analysis.spikes;
+    if (sp.skipped) return [el('span', { className: 'small', text: 'Not checked: too little traffic or history.' })];
+    if (!sp.events.length) return [el('span', { text: 'None' }), el('div', { className: 'small', text: 'No day reached ' + sp.multiple + '× the usual ' + fmtNum(sp.baseline) + ' views.' })];
+    var list = el('ul', { className: 'spikes' }, sp.events.slice(0, 3).map(function (e) {
+      return el('li', null, [
+        el('strong', { text: Trend.niceDay(e.peakDay) }),
+        ' ' + fmtNum(e.peakViews) + ' views (' + e.multiple.toFixed(1) + '×)',
+        el('div', { className: 'small' }, [
+          link(historyUrl(row.resolved, e.peakDay), 'Edit history'), ' · ',
+          link(pageviewsToolUrl(row.resolved, e.peakDay - 14 * Trend.DAY, Math.min(e.peakDay + 14 * Trend.DAY, row.analysis.trend.dataThrough)), 'Views that month')
+        ])
+      ]);
+    }));
+    var more = sp.events.length > 3 ? el('div', { className: 'small', text: sp.events.length + ' events in 12 months; newest 3 shown.' }) : null;
+    return [list, more];
+  }
 
   function seasonCell(row) {
     if (!row.analysis) return [];
@@ -342,7 +371,8 @@
         el('td', { 'data-label': COLUMNS[2] }, trendCell(row)),
         el('td', { 'data-label': COLUMNS[3], className: 'num' }, mediansCell(row)),
         el('td', { 'data-label': COLUMNS[4] }, seasonCell(row)),
-        el('td', { 'data-label': COLUMNS[5] }, dataCell(row))
+        el('td', { 'data-label': COLUMNS[5] }, spikesCell(row)),
+        el('td', { 'data-label': COLUMNS[6] }, dataCell(row))
       ]));
     });
   }

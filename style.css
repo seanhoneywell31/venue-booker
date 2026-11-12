@@ -100,6 +100,8 @@ table.results { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
 .results td.num { font-variant-numeric: tabular-nums; }
 .small { font-size: 0.8rem; color: var(--muted); }
 .row-error { color: #7a1a12; }
+ul.spikes { list-style: none; margin: 0; padding: 0; }
+ul.spikes li { margin-bottom: 6px; }
 
 a { color: var(--accent); }
 
