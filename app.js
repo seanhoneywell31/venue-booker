@@ -10,9 +10,18 @@
   var TIMEOUT_MS = 8000;                       // give up on a request after 8 seconds
   var WIKI = 'https://en.wikipedia.org';
   var ACTION_API = WIKI + '/w/api.php';
-  var STORE = { shortlist: 'bookingRadar.shortlist' };
+  var PAGEVIEWS_API = 'https://wikimedia.org/api/rest_v1/metrics/pageviews/per-article/en.wikipedia.org/all-access/user/';
+  var STORE = { shortlist: 'bookingRadar.shortlist', settings: 'bookingRadar.settings' };
 
-  var state = { rows: [], busy: false };
+  // Editable thresholds (design assumptions, not fitted values).
+  var DEFAULTS = { risingPct: 20, fadingPct: 20, minViews: 20 };
+  var LIMITS = {
+    risingPct: { min: 1, max: 500, label: 'Rising threshold' },
+    fadingPct: { min: 1, max: 99, label: 'Fading threshold' },
+    minViews: { min: 0, max: 100000, label: 'Minimum traffic' }
+  };
+
+  var state = { rows: [], busy: false, settings: null };
 
   // ---------- Small helpers ----------
   function $(id) { return document.getElementById(id); }
@@ -50,6 +59,51 @@
 
   function articleUrl(title) {
     return WIKI + '/wiki/' + encodeURIComponent(title.replace(/ /g, '_'));
+  }
+
+  // Wikimedia's own Pageviews tool, so the booker can check our numbers.
+  function pageviewsToolUrl(title, startMs, endMs) {
+    return 'https://pageviews.wmcloud.org/?' + new URLSearchParams({
+      project: 'en.wikipedia.org', platform: 'all-access', agent: 'user',
+      start: Trend.isoDay(startMs), end: Trend.isoDay(endMs), pages: title.replace(/ /g, '_')
+    }).toString();
+  }
+
+  function fmtNum(x) {
+    return Number(x).toLocaleString('en-US', { maximumFractionDigits: Number.isInteger(x) ? 0 : 1 });
+  }
+  function fmtPct(x) { return (x > 0 ? '+' : '') + x.toFixed(1) + '%'; }
+
+  // ---------- Settings ----------
+  function loadSettings() {
+    var s = load(STORE.settings, {}) || {};
+    var out = {};
+    Object.keys(DEFAULTS).forEach(function (k) {
+      var v = Number(s[k]);
+      out[k] = (isFinite(v) && v >= LIMITS[k].min && v <= LIMITS[k].max) ? v : DEFAULTS[k];
+    });
+    return out;
+  }
+
+  function showSettings() {
+    Object.keys(DEFAULTS).forEach(function (k) { $('set-' + k).value = state.settings[k]; });
+  }
+
+  function readSettingsForm() {
+    var problems = [], next = {};
+    Object.keys(DEFAULTS).forEach(function (k) {
+      var raw = $('set-' + k).value.trim(), v = Number(raw), lim = LIMITS[k];
+      if (raw === '' || !isFinite(v) || v < lim.min || v > lim.max) {
+        problems.push(lim.label + ' must be a number from ' + lim.min + ' to ' + lim.max + '.');
+        next[k] = state.settings[k];
+      } else next[k] = v;
+    });
+    var box = $('settings-msg');
+    box.textContent = problems.length ? problems.join(' ') + ' Kept the previous value.' : 'Saved. Results updated.';
+    box.className = problems.length ? 'small row-error' : 'small';
+    state.settings = next;
+    save(STORE.settings, next);
+    renderTable();
   }
 
   // Wikimedia asks browser apps to identify themselves with this header.
@@ -186,26 +240,96 @@
     }
   }
 
+  // ---------- Step 3 of the workflow: fetch daily page views for one artist ----------
+  function fetchWindow() {
+    var now = Date.now();
+    var today = Date.UTC(new Date(now).getUTCFullYear(), new Date(now).getUTCMonth(), new Date(now).getUTCDate());
+    var end = today - Trend.DAY;                                   // yesterday (UTC)
+    var startYear = new Date(today - 7 * Trend.DAY).getUTCFullYear() - 3;
+    return { start: Trend.dayMs(startYear, 1, 1), end: end };      // three full years plus this year
+  }
+
+  async function fetchSeries(title) {
+    var w = fetchWindow();
+    var url = PAGEVIEWS_API + encodeURIComponent(title.replace(/ /g, '_')) +
+      '/daily/' + Trend.compactDay(w.start) + '/' + Trend.compactDay(w.end);
+    var r = await fetchJson(url);              // throws LiveError if the service is down
+    if (r.notFound) return { series: null };
+    return { series: Trend.seriesFromItems((r.data && r.data.items) || [], w.start) };
+  }
+
   // ---------- Rendering ----------
-  var COLUMNS = ['Artist', 'Wikipedia article', 'Title check'];
+  var COLUMNS = ['#', 'Artist', 'Trend (F1)', 'Median views per day (F2)', 'Data'];
+
+  function analyzeRow(row) {
+    row.analysis = row.series ? Trend.analyze(row.series, state.settings) : null;
+    return row;
+  }
+
+  // Labeled rows first, highest change on top; everything else keeps its input order.
+  function sortedRows() {
+    var labeled = [], other = [];
+    state.rows.forEach(function (r, i) {
+      r.order = i;
+      if (r.analysis && r.analysis.trend.label) labeled.push(r); else other.push(r);
+    });
+    labeled.sort(function (a, b) { return b.analysis.trend.changePct - a.analysis.trend.changePct || a.order - b.order; });
+    return { labeled: labeled, other: other };
+  }
+
+  var BADGE = { Rising: 'ok', Steady: 'flat', Fading: 'warn' };
+
+  function trendCell(row) {
+    if (titleProblem(row)) return [el('span', { className: 'badge bad', text: 'Title problem' }), el('div', { className: 'row-error', text: titleProblem(row) })];
+    if (row.dataError) return [el('span', { className: 'badge bad', text: 'No data' }), el('div', { className: 'row-error', text: row.dataError })];
+    if (!row.analysis) return [el('span', { className: 'small', text: 'Waiting...' })];
+    var t = row.analysis.trend;
+    if (t.status === 'low') return [el('span', { className: 'badge flat', text: 'No label' }),
+      el('div', { className: 'small', text: 'Too little traffic: under ' + state.settings.minViews + ' views a day in both periods.' })];
+    if (t.status === 'new') return [el('span', { className: 'badge flat', text: 'No label' }),
+      el('div', { className: 'small', text: 'Not enough history: fewer than ' + Trend.MIN_HISTORY + ' days of data a year ago (the article may be new).' })];
+    return [el('span', { className: 'badge ' + BADGE[t.label], text: t.label }), ' ', el('strong', { text: fmtPct(t.changePct) })];
+  }
+
+  function mediansCell(row) {
+    if (!row.analysis) return [];
+    var t = row.analysis.trend;
+    return [
+      el('div', null, [el('strong', { text: fmtNum(t.medRecent) }), ' now vs ', el('strong', { text: fmtNum(t.medPrior) }), ' a year ago']),
+      el('div', { className: 'small', text: Trend.niceRange(t.recentStart, t.recentEnd) + ' vs ' + Trend.niceRange(t.priorStart, t.priorEnd) })
+    ];
+  }
+
+  function dataCell(row) {
+    if (!row.analysis) return [];
+    var t = row.analysis.trend;
+    return [
+      el('div', { text: 'Live, through ' + Trend.niceDay(t.dataThrough) }),
+      el('div', { className: 'small' }, [link(pageviewsToolUrl(row.resolved, t.priorStart, t.dataThrough), 'Verify in Pageviews tool')])
+    ];
+  }
 
   function renderTable() {
     var thead = $('results').tHead, tbody = $('results').tBodies[0];
     thead.textContent = ''; tbody.textContent = '';
     if (!state.rows.length) return;
+    state.rows.forEach(function (r) { if (r.series) analyzeRow(r); });
     thead.appendChild(el('tr', null, COLUMNS.map(function (c) { return el('th', { scope: 'col', text: c }); })));
-    state.rows.forEach(function (row) {
-      var problem = titleProblem(row);
-      var article = row.status === 'ok' || row.status === 'unverified' || row.status === 'disambiguation'
-        ? link(articleUrl(row.resolved), row.resolved) : el('span', { text: row.resolved });
-      var note = row.redirectedFrom ? el('div', { className: 'small', text: 'Redirected from "' + row.redirectedFrom + '"' }) : null;
-      var check = problem ? el('span', { className: 'row-error', text: problem })
-        : row.status === 'unverified' ? el('span', { className: 'small', text: 'Not verified (title service unreachable); used as typed.' })
-        : el('span', { className: 'badge ok', text: 'Found' });
+    var groups = sortedRows();
+    groups.labeled.concat(groups.other).forEach(function (row) {
+      var rank = groups.labeled.indexOf(row);
+      var titleOk = !titleProblem(row);
+      var artist = [
+        titleOk ? link(articleUrl(row.resolved), row.resolved) : el('span', { text: row.input }),
+        row.redirectedFrom ? el('div', { className: 'small', text: 'Redirected from "' + row.redirectedFrom + '"' }) : null,
+        row.status === 'unverified' ? el('div', { className: 'small', text: 'Title not verified; used as typed.' }) : null
+      ];
       tbody.appendChild(el('tr', null, [
-        el('td', { 'data-label': COLUMNS[0], text: row.input }),
-        el('td', { 'data-label': COLUMNS[1] }, [article, note]),
-        el('td', { 'data-label': COLUMNS[2] }, [check])
+        el('td', { 'data-label': '#', className: 'num', text: rank >= 0 ? String(rank + 1) : '' }),
+        el('td', { 'data-label': COLUMNS[1] }, artist),
+        el('td', { 'data-label': COLUMNS[2] }, trendCell(row)),
+        el('td', { 'data-label': COLUMNS[3], className: 'num' }, mediansCell(row)),
+        el('td', { 'data-label': COLUMNS[4] }, dataCell(row))
       ]));
     });
   }
@@ -239,10 +363,24 @@
       showMessages(notes);
       state.rows = rows;
       renderTable();
-      var found = rows.filter(function (r) { return r.status === 'ok'; }).length;
-      $('progress').textContent = res.verified
-        ? 'Title check done: ' + found + ' of ' + rows.length + ' found.'
-        : 'Could not reach the Wikipedia title service (' + res.reason + '). Titles are used as typed.';
+
+      // Fetch one artist at a time (Wikimedia asks clients to wait for each request).
+      var todo = rows.filter(function (r) { return r.status === 'ok' || r.status === 'unverified'; });
+      for (var k = 0; k < todo.length; k++) {
+        var row = todo[k];
+        $('progress').textContent = 'Checking ' + (k + 1) + ' of ' + todo.length + ': ' + row.resolved + '...';
+        try {
+          var got = await fetchSeries(row.resolved);
+          if (got.series) { row.series = got.series; row.source = 'live'; row.retrievedAt = new Date().toISOString(); }
+          else row.dataError = 'Wikimedia has no page-view data for this exact title.';
+        } catch (e) {
+          row.dataError = 'Live data unavailable (' + e.message + ').';
+        }
+        renderTable();
+      }
+      var labeled = rows.filter(function (r) { return r.analysis && r.analysis.trend.label; }).length;
+      $('progress').textContent = 'Done: ' + labeled + ' of ' + rows.length + ' artists labeled' +
+        (res.verified ? '.' : '. The Wikipedia title service could not be reached (' + res.reason + '), so titles were used as typed.');
     } finally {
       setBusy(false);
     }
@@ -254,6 +392,17 @@
     box.value = load(STORE.shortlist, '');
     box.addEventListener('input', function () { updateCount(); save(STORE.shortlist, box.value); });
     $('check').addEventListener('click', runCheck);
+    state.settings = loadSettings();
+    showSettings();
+    $('save-settings').addEventListener('click', readSettingsForm);
+    $('reset-settings').addEventListener('click', function () {
+      state.settings = Object.assign({}, DEFAULTS);
+      save(STORE.settings, state.settings);
+      showSettings();
+      $('settings-msg').textContent = 'Defaults restored. Results updated.';
+      $('settings-msg').className = 'small';
+      renderTable();
+    });
     updateCount();
   }
 
