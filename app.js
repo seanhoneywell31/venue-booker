@@ -11,7 +11,9 @@
   var WIKI = 'https://en.wikipedia.org';
   var ACTION_API = WIKI + '/w/api.php';
   var PAGEVIEWS_API = 'https://wikimedia.org/api/rest_v1/metrics/pageviews/per-article/en.wikipedia.org/all-access/user/';
-  var STORE = { shortlist: 'bookingRadar.shortlist', settings: 'bookingRadar.settings' };
+  var STORE = { shortlist: 'bookingRadar.shortlist', settings: 'bookingRadar.settings', decisions: 'bookingRadar.decisions' };
+  var DECISIONS = [['', 'Choose...'], ['offer', 'Offer'], ['watch', 'Watch'], ['pass', 'Pass']];
+  var REASON_MAX = 200;
 
   // Editable thresholds (design assumptions, not fitted values).
   var DEFAULTS = { risingPct: 20, fadingPct: 20, minViews: 20, spikeMultiple: 3 };
@@ -269,7 +271,48 @@
   }
 
   // ---------- Rendering ----------
-  var COLUMNS = ['#', 'Artist', 'Trend (F1)', 'Median views per day (F2)', 'Seasonal peak (F3)', 'Spikes, last 12 months (F4)', 'Data'];
+  var COLUMNS = ['#', 'Artist', 'Trend (F1)', 'Median views per day (F2)', 'Seasonal peak (F3)', 'Spikes, last 12 months (F4)', 'Next step and your decision (F5)', 'Data'];
+
+  // ---------- F5: the booker's decision, saved only in this browser ----------
+  function fmtTime(iso) {
+    var d = new Date(iso);
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ', ' +
+      d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  }
+
+  function saveDecision(title, patch, stamp) {
+    var all = state.decisions;
+    var cur = all[title] || { decision: '', reason: '' };
+    Object.keys(patch).forEach(function (k) { cur[k] = patch[k]; });
+    cur.at = new Date().toISOString();
+    all[title] = cur;
+    var ok = save(STORE.decisions, all);
+    stamp.textContent = ok ? 'Saved ' + fmtTime(cur.at) : 'Could not save in this browser (storage blocked). Export a CSV to keep it.';
+  }
+
+  function decisionCell(row, idx) {
+    if (titleProblem(row)) return [];
+    var title = row.resolved, saved = state.decisions[title] || { decision: '', reason: '' };
+    var suggestion = row.analysis ? el('div', { className: 'suggest', text: row.analysis.nextStep }) : null;
+    var selId = 'dec-' + idx, reasonId = 'why-' + idx;
+    var select = el('select', { id: selId }, DECISIONS.map(function (d) {
+      return el('option', { value: d[0], text: d[1], selected: saved.decision === d[0] ? 'selected' : null });
+    }));
+    var reason = el('input', { id: reasonId, type: 'text', maxlength: String(REASON_MAX), value: saved.reason || '',
+      placeholder: 'Reason (no personal details)', autocomplete: 'off' });
+    var stamp = el('div', { className: 'small', text: saved.at ? 'Saved ' + fmtTime(saved.at) : '' });
+    select.disabled = reason.disabled = state.busy;
+    select.addEventListener('change', function () { saveDecision(title, { decision: select.value }, stamp); });
+    var timer = null;
+    reason.addEventListener('input', function () {
+      clearTimeout(timer);
+      timer = setTimeout(function () { saveDecision(title, { reason: reason.value.slice(0, REASON_MAX) }, stamp); }, 400);
+    });
+    return [suggestion, el('div', { className: 'decision' }, [
+      el('label', { 'for': selId, className: 'visually-hidden', text: 'Decision for ' + title }), select,
+      el('label', { 'for': reasonId, className: 'visually-hidden', text: 'Reason for ' + title }), reason
+    ]), stamp];
+  }
 
   function spikesCell(row) {
     if (!row.analysis) return [];
@@ -293,9 +336,10 @@
   function seasonCell(row) {
     if (!row.analysis) return [];
     var s = row.analysis.season;
-    var detail = s.years.map(function (y) {
-      return y.year + ': ' + (y.qualifies ? Trend.MONTHS[y.month].slice(0, 3) : 'no clear peak');
-    }).join(', ');
+    var anyPeak = s.years.some(function (y) { return y.qualifies; });
+    var detail = anyPeak
+      ? s.years.map(function (y) { return y.year + ': ' + (y.qualifies ? Trend.MONTHS[y.month].slice(0, 3) : 'no clear peak'); }).join(', ')
+      : 'No month stood out in ' + s.years.map(function (y) { return y.year; }).join(', ') + '.';
     if (s.status === 'short') return [el('span', { className: 'small', text: 'Not enough full years of data' })];
     if (s.status === 'none') return [el('span', { text: 'No repeating peak month' }), el('div', { className: 'small', text: detail })];
     return [el('strong', { text: 'Peaks in ' + Trend.MONTHS[s.month] }),
@@ -357,7 +401,7 @@
     state.rows.forEach(function (r) { if (r.series) analyzeRow(r); });
     thead.appendChild(el('tr', null, COLUMNS.map(function (c) { return el('th', { scope: 'col', text: c }); })));
     var groups = sortedRows();
-    groups.labeled.concat(groups.other).forEach(function (row) {
+    groups.labeled.concat(groups.other).forEach(function (row, idx) {
       var rank = groups.labeled.indexOf(row);
       var titleOk = !titleProblem(row);
       var artist = [
@@ -372,7 +416,8 @@
         el('td', { 'data-label': COLUMNS[3], className: 'num' }, mediansCell(row)),
         el('td', { 'data-label': COLUMNS[4] }, seasonCell(row)),
         el('td', { 'data-label': COLUMNS[5] }, spikesCell(row)),
-        el('td', { 'data-label': COLUMNS[6] }, dataCell(row))
+        el('td', { 'data-label': COLUMNS[6] }, decisionCell(row, idx)),
+        el('td', { 'data-label': COLUMNS[7] }, dataCell(row))
       ]));
     });
   }
@@ -381,6 +426,7 @@
     state.busy = b;
     $('artists').readOnly = b;
     updateCount();
+    if (!b) renderTable();        // re-enable the decision controls
   }
 
   // ---------- Main action ----------
@@ -436,6 +482,10 @@
     box.addEventListener('input', function () { updateCount(); save(STORE.shortlist, box.value); });
     $('check').addEventListener('click', runCheck);
     state.settings = loadSettings();
+    state.decisions = load(STORE.decisions, {}) || {};
+    var nSaved = Object.keys(state.decisions).filter(function (k) { return state.decisions[k].decision || state.decisions[k].reason; }).length;
+    if (nSaved) $('progress').textContent = 'You have saved decisions for ' + nSaved + ' artist' + (nSaved === 1 ? '' : 's') +
+      '. Click Check trends to see them next to fresh data.';
     showSettings();
     $('save-settings').addEventListener('click', readSettingsForm);
     $('reset-settings').addEventListener('click', function () {

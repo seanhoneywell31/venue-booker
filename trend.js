@@ -161,8 +161,26 @@
     return res;
   }
 
+  // ---------- F5: suggested next step (a response rule for each label) ----------
+  // The tool only suggests. The booker records the actual decision.
+  var NEXT_STEP = {
+    Rising: 'Move early: make an offer before the fee climbs.',
+    Steady: 'Offer on your usual terms.',
+    Fading: 'Watch, or offer a lower guarantee.'
+  };
+
+  function nextStep(t, sp) {
+    var text = t.label ? NEXT_STEP[t.label] : 'No usable signal: decide on other evidence.';
+    if (sp && !sp.skipped && sp.recentCount > 0) {
+      var newest = sp.events[0];
+      text += ' Check what caused the ' + niceDay(newest.peakDay) + ' spike first.';
+    }
+    return text;
+  }
+
   function analyze(series, opts) {
-    return { trend: trend(series, opts), season: seasonality(series), spikes: spikes(series, opts) };
+    var t = trend(series, opts), sp = spikes(series, opts);
+    return { trend: t, season: seasonality(series), spikes: sp, nextStep: nextStep(t, sp) };
   }
 
   var api = {
@@ -171,6 +189,7 @@
     seriesFromItems: seriesFromItems, lastDay: lastDay, windowValues: windowValues, median: median,
     trend: trend, seasonality: seasonality, SEASON_LIFT: SEASON_LIFT, SEASON_MIN_DAYS: SEASON_MIN_DAYS,
     spikes: spikes, SPIKE_LOOKBACK: SPIKE_LOOKBACK, SPIKE_GAP: SPIKE_GAP, RECENT_DAYS: RECENT_DAYS,
+    nextStep: nextStep, NEXT_STEP: NEXT_STEP,
     analyze: analyze
   };
   root.Trend = api;
