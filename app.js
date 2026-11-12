@@ -11,7 +11,8 @@
   var WIKI = 'https://en.wikipedia.org';
   var ACTION_API = WIKI + '/w/api.php';
   var PAGEVIEWS_API = 'https://wikimedia.org/api/rest_v1/metrics/pageviews/per-article/en.wikipedia.org/all-access/user/';
-  var STORE = { shortlist: 'bookingRadar.shortlist', settings: 'bookingRadar.settings', decisions: 'bookingRadar.decisions' };
+  var STORE = { shortlist: 'bookingRadar.shortlist', settings: 'bookingRadar.settings', decisions: 'bookingRadar.decisions', lastRun: 'bookingRadar.lastRun' };
+  var SNAPSHOT_URL = 'data/snapshot.json';
   var DECISIONS = [['', 'Choose...'], ['offer', 'Offer'], ['watch', 'Watch'], ['pass', 'Pass']];
   var REASON_MAX = 200;
 
@@ -24,7 +25,8 @@
     spikeMultiple: { min: 1.5, max: 50, label: 'Spike multiple' }
   };
 
-  var state = { rows: [], busy: false, settings: null };
+  var state = { rows: [], busy: false, settings: null, decisions: {}, snapshot: null, snapshotNote: null,
+                lastRun: null, simulateOutage: false };
 
   // ---------- Small helpers ----------
   function $(id) { return document.getElementById(id); }
@@ -188,6 +190,7 @@
 
   // Returns {data} or {notFound:true}; throws LiveError when the service cannot be used.
   async function fetchJson(url) {
+    if (state.simulateOutage) throw new LiveError('test', 'test mode: live data switched off');
     var res;
     try {
       res = await fetchWithTimeout(url, true);
@@ -268,6 +271,123 @@
     var r = await fetchJson(url);              // throws LiveError if the service is down
     if (r.notFound) return { series: null };
     return { series: Trend.seriesFromItems((r.data && r.data.items) || [], w.start) };
+  }
+
+  // ---------- F7: cached copy (data/snapshot.json) and data-source status ----------
+  // The snapshot is a dated copy of real page views saved from the live site.
+  // Each entry is checked before use, so a damaged file cannot break the page.
+  function readSnapshot(json) {
+    var out = { savedAt: null, artists: {} };
+    if (!json || typeof json !== 'object' || typeof json.artists !== 'object' || json.artists === null) return out;
+    out.savedAt = typeof json.savedAt === 'string' && !isNaN(Date.parse(json.savedAt)) ? json.savedAt : null;
+    Object.keys(json.artists).forEach(function (title) {
+      var a = json.artists[title];
+      if (!a || typeof a.start !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(a.start) || !Array.isArray(a.views)) return;
+      if (a.views.length < 1 || a.views.length > 4000) return;
+      var okValues = a.views.every(function (v) { return v === null || (typeof v === 'number' && isFinite(v) && v >= 0); });
+      if (!okValues) return;
+      out.artists[title] = { start: a.start, views: a.views, retrievedAt: typeof a.retrievedAt === 'string' ? a.retrievedAt : null };
+    });
+    return out;
+  }
+
+  async function loadSnapshot() {
+    try {
+      var res = await fetch(SNAPSHOT_URL, { cache: 'no-cache' });
+      if (!res.ok) throw new Error('missing');
+      state.snapshot = readSnapshot(await res.json());
+      state.snapshotNote = null;
+    } catch (e) {
+      state.snapshot = { savedAt: null, artists: {} };
+      state.snapshotNote = location.protocol === 'file:'
+        ? 'The cached copy cannot load when the page is opened as a file. Use the live site.'
+        : 'The cached copy could not be loaded.';
+    }
+    renderStatus();
+  }
+
+  function cachedSeries(title) {
+    var a = state.snapshot && state.snapshot.artists[title];
+    if (!a) return null;
+    return { start: Trend.parseDay(a.start), views: a.views.slice() };
+  }
+
+  function snapshotSummary() {
+    if (state.snapshotNote) return state.snapshotNote;
+    if (!state.snapshot) return 'Looking for a cached copy...';
+    var n = Object.keys(state.snapshot.artists).length;
+    if (!n) return 'No cached copy saved yet.';
+    return 'Cached copy: ' + n + ' artist' + (n === 1 ? '' : 's') + (state.snapshot.savedAt ? ', saved ' + Trend.niceDay(Date.parse(state.snapshot.savedAt)) : '') + '.';
+  }
+
+  function renderStatus() {
+    var box = $('status'), main = $('status-main'), sub = $('status-sub');
+    var run = state.lastRun;
+    var cls = 'status', text;
+    if (state.busy) { text = 'Checking...'; }
+    else if (!run) { text = 'Live data not checked yet.'; }
+    else {
+      var live = run.entries.filter(function (e) { return e.source === 'live'; }).length;
+      var cached = run.entries.filter(function (e) { return e.source === 'cached'; }).length;
+      var failed = run.entries.filter(function (e) { return e.liveError; }).length;
+      var noData = run.entries.filter(function (e) { return !e.source; }).length;
+      if (failed) {
+        cls += ' warn';
+        text = 'Live data unavailable for ' + failed + ' artist' + (failed === 1 ? '' : 's') + ' (' + run.firstError + '). ' +
+          (cached ? 'Showing the cached copy' + (state.snapshot && state.snapshot.savedAt ? ' saved ' + Trend.niceDay(Date.parse(state.snapshot.savedAt)) : '') + ' for ' + cached + ' of them.' : 'No cached copy was available for them.');
+      } else if (live) {
+        cls += ' ok';
+        text = 'Live data from Wikimedia, retrieved ' + fmtTime(run.at) + '. Data through ' + Trend.niceDay(run.dataThrough) + '.';
+      } else {
+        cls += noData ? ' bad' : '';
+        text = 'No page-view data was loaded in the last check.';
+      }
+    }
+    if (state.simulateOutage) { cls = 'status warn'; text = 'Test mode is on: live data is switched off. ' + (text || ''); }
+    box.className = cls;
+    main.textContent = text;
+    sub.textContent = snapshotSummary();
+    var log = $('run-log');
+    log.textContent = '';
+    (run ? run.entries : []).forEach(function (e) { log.appendChild(el('li', { text: e.text })); });
+    $('run-log-wrap').hidden = !run;
+    if (run) $('run-log-time').textContent = 'Last check: ' + fmtTime(run.at);
+    $('save-snapshot').disabled = state.busy || !state.rows.some(function (r) { return r.source === 'live'; });
+  }
+
+  function logEntry(row) {
+    var t = row.analysis && row.analysis.trend;
+    var name = row.resolved || row.input, text;
+    if (titleProblem(row)) text = name + ': title problem (' + row.status + '); not checked.';
+    else if (row.source === 'live') text = name + ': live data, through ' + Trend.isoDay(t.dataThrough) + '.';
+    else if (row.source === 'cached') text = name + ': live data failed (' + row.liveError + '); used cached copy, through ' + Trend.isoDay(t.dataThrough) + '.';
+    else text = name + ': ' + (row.dataError || 'no data') ;
+    return { title: name, source: row.source || null, liveError: row.liveError || null, text: text };
+  }
+
+  function saveSnapshotFile() {
+    var artists = {};
+    Object.keys((state.snapshot && state.snapshot.artists) || {}).forEach(function (k) { artists[k] = state.snapshot.artists[k]; });
+    var added = 0;
+    state.rows.forEach(function (r) {
+      if (r.source !== 'live' || !r.series) return;
+      artists[r.resolved] = { start: Trend.isoDay(r.series.start), retrievedAt: r.retrievedAt, views: r.series.views };
+      added++;
+    });
+    var file = {
+      format: 1,
+      note: 'Cached copy of real page views saved from Booking Radar. Used only when the live service cannot be reached.',
+      source: SOURCE_TEXT,
+      savedAt: new Date().toISOString(),
+      artists: artists
+    };
+    var blob = new Blob([JSON.stringify(file)], { type: 'application/json' });
+    var url = URL.createObjectURL(blob);
+    var a = el('a', { href: url, download: 'snapshot.json' });
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
+    $('snapshot-msg').textContent = 'Downloaded snapshot.json (' + Object.keys(artists).length + ' artists, ' + added + ' from this check). ' +
+      'Upload it to the data folder of the GitHub repo to update the cached copy.';
   }
 
   // ---------- Rendering ----------
@@ -388,6 +508,12 @@
   function dataCell(row) {
     if (!row.analysis) return [];
     var t = row.analysis.trend;
+    if (row.source === 'cached') return [
+      el('span', { className: 'badge warn', text: 'Cached copy' }),
+      el('div', { text: 'Through ' + Trend.niceDay(t.dataThrough) }),
+      el('div', { className: 'small', text: 'Live data failed: ' + row.liveError + '.' }),
+      el('div', { className: 'small' }, [link(pageviewsToolUrl(row.resolved, t.priorStart, t.dataThrough), 'Verify in Pageviews tool')])
+    ];
     return [
       el('div', { text: 'Live, through ' + Trend.niceDay(t.dataThrough) }),
       el('div', { className: 'small' }, [link(pageviewsToolUrl(row.resolved, t.priorStart, t.dataThrough), 'Verify in Pageviews tool')])
@@ -442,7 +568,9 @@
         decision: d.decision || '',
         reason: d.reason || '',
         decided_at: d.at || '',
-        data_source: row.source || '',
+        data_source: row.source === 'cached'
+          ? 'cached copy' + (state.snapshot && state.snapshot.savedAt ? ' saved ' + Trend.isoDay(Date.parse(state.snapshot.savedAt)) : '')
+          : (row.source || ''),
         data_through: t ? Trend.isoDay(t.dataThrough) : '',
         retrieved_at: row.retrievedAt || '',
         source: row.series ? SOURCE_TEXT : '',
@@ -501,6 +629,7 @@
     $('artists').readOnly = b;
     updateCount();
     if (!b) renderTable();        // re-enable the decision controls
+    renderStatus();
   }
 
   // ---------- Main action ----------
@@ -510,6 +639,8 @@
     if (parsed.tooMany || !parsed.titles.length) return;
 
     setBusy(true);
+    $('export-msg').textContent = '';
+    $('snapshot-msg').textContent = '';
     $('progress').textContent = 'Checking titles with Wikipedia...';
     try {
       var res = await resolveTitles(parsed.titles);
@@ -537,13 +668,29 @@
           if (got.series) { row.series = got.series; row.source = 'live'; row.retrievedAt = new Date().toISOString(); }
           else row.dataError = 'Wikimedia has no page-view data for this exact title.';
         } catch (e) {
-          row.dataError = 'Live data unavailable (' + e.message + ').';
+          // Fail safely: fall back to the cached copy for this artist, if there is one.
+          row.liveError = e.message;
+          var cached = cachedSeries(row.resolved);
+          if (cached) { row.series = cached; row.source = 'cached'; row.retrievedAt = (state.snapshot.artists[row.resolved].retrievedAt || ''); }
+          else row.dataError = 'No data available: live data failed (' + e.message + ') and there is no cached copy for this artist.';
         }
         renderTable();
       }
       var labeled = rows.filter(function (r) { return r.analysis && r.analysis.trend.label; }).length;
       $('progress').textContent = 'Done: ' + labeled + ' of ' + rows.length + ' artists labeled' +
         (res.verified ? '.' : '. The Wikipedia title service could not be reached (' + res.reason + '), so titles were used as typed.');
+
+      // Log this run (kept in this browser only): source and data date per artist.
+      var entries = rows.map(function (r) { if (r.series) analyzeRow(r); return logEntry(r); });
+      var withData = rows.filter(function (r) { return r.analysis; });
+      var firstFail = rows.filter(function (r) { return r.liveError; })[0];
+      state.lastRun = {
+        at: new Date().toISOString(),
+        dataThrough: withData.length ? Math.max.apply(null, withData.map(function (r) { return r.analysis.trend.dataThrough; })) : null,
+        firstError: firstFail ? firstFail.liveError : null,
+        entries: entries
+      };
+      save(STORE.lastRun, state.lastRun);
     } finally {
       setBusy(false);
     }
@@ -556,6 +703,14 @@
     box.addEventListener('input', function () { updateCount(); save(STORE.shortlist, box.value); });
     $('check').addEventListener('click', runCheck);
     $('export').addEventListener('click', exportCsv);
+    $('save-snapshot').addEventListener('click', saveSnapshotFile);
+    $('set-outage').checked = false;            // test switch is never remembered
+    $('set-outage').addEventListener('change', function () {
+      state.simulateOutage = $('set-outage').checked;
+      renderStatus();
+    });
+    state.lastRun = load(STORE.lastRun, null);
+    if (!state.lastRun || !Array.isArray(state.lastRun.entries)) state.lastRun = null;
     state.settings = loadSettings();
     state.decisions = load(STORE.decisions, {}) || {};
     var nSaved = Object.keys(state.decisions).filter(function (k) { return state.decisions[k].decision || state.decisions[k].reason; }).length;
@@ -572,6 +727,8 @@
       renderTable();
     });
     updateCount();
+    renderStatus();
+    loadSnapshot();
   }
 
   document.addEventListener('DOMContentLoaded', init);

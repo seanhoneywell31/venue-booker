@@ -17,6 +17,16 @@
   </header>
 
   <main class="wrap">
+    <section id="status" class="status" role="status" aria-live="polite">
+      <p id="status-main" class="status-main">Live data not checked yet.</p>
+      <p id="status-sub" class="status-sub"></p>
+      <details id="run-log-wrap" class="run-log" hidden>
+        <summary>Run log</summary>
+        <p id="run-log-time" class="small"></p>
+        <ul id="run-log"></ul>
+      </details>
+    </section>
+
     <section class="panel" aria-labelledby="shortlist-h">
       <h2 id="shortlist-h">1. Your shortlist</h2>
       <label for="artists" class="field-label">Wikipedia article titles, one per line (up to 10)</label>
@@ -46,6 +56,10 @@
           <button id="reset-settings" type="button">Reset to defaults</button>
           <span id="settings-msg" class="small" aria-live="polite"></span>
         </div>
+        <div class="test-switch">
+          <input id="set-outage" type="checkbox">
+          <label for="set-outage">Test mode: simulate a live-data outage (not saved; turns off when you reload)</label>
+        </div>
       </details>
     </section>
 
@@ -55,9 +69,11 @@
         <p id="progress" class="progress" aria-live="polite">Enter a shortlist and click Check trends.</p>
         <div class="export">
           <button id="export" type="button" disabled>Export CSV</button>
-          <span id="export-msg" class="small" aria-live="polite"></span>
+          <button id="save-snapshot" type="button" disabled title="Download today's live data as data/snapshot.json for the repo">Save offline copy</button>
         </div>
       </div>
+      <p id="export-msg" class="small" aria-live="polite"></p>
+      <p id="snapshot-msg" class="small" aria-live="polite"></p>
       <div class="table-wrap">
         <table id="results" class="results">
           <thead></thead>

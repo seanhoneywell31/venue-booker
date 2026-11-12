@@ -126,6 +126,18 @@ a { color: var(--accent); }
 
 .site-footer { color: var(--muted); font-size: 0.85rem; padding: 8px 0 28px; }
 
+.status { margin: 16px 0 0; padding: 10px 14px; border-radius: 10px; border: 1px solid #cbd3e1; background: var(--flat-bg); color: var(--flat); }
+.status.ok { background: var(--good-bg); border-color: #b5dcc4; color: #12532e; }
+.status.warn { background: var(--warn-bg); border-color: #f0d49a; color: #5c3c00; }
+.status.bad { background: var(--bad-bg); border-color: #f2b8b1; color: #7a1a12; }
+.status-main { margin: 0; font-weight: 600; }
+.status-sub { margin: 2px 0 0; font-size: 0.88rem; }
+.run-log { margin-top: 6px; }
+.run-log ul { margin: 4px 0 0; padding-left: 20px; font-size: 0.85rem; }
+.test-switch { display: flex; gap: 8px; align-items: flex-start; margin-top: 12px; font-size: 0.9rem; color: var(--warn); }
+.test-switch input { margin-top: 4px; }
+#export-msg, #snapshot-msg { margin: 0; }
+
 /* Phone layout: each table row becomes a card with its own labels. */
 @media (max-width: 760px) {
   .results thead { display: none; }
