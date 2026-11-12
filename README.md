@@ -4,7 +4,7 @@ Rank a shortlist of touring acts by public attention trend before making offers.
 
 Student project for MIS 480S Strategic Technology Management (Project 2), Binghamton University, Fall 2026.
 
-- **Live site:** ADD THE PRODUCTION URL FROM VERCEL HERE (the short `*.vercel.app` address, not a preview link)
+- **Live site:** https://venue-booker.vercel.app/
 - **User:** a talent buyer at a 1,200-capacity independent venue in upstate New York that books about 10 touring acts a month. This is a **constructed persona**: the venue is fictional and is assumed to have no paid music-analytics subscription.
 - **Decision supported:** which acts on a shortlist of 5–10 get offers, and how aggressively.
 
@@ -99,9 +99,30 @@ Settings → tick **Test mode: simulate a live-data outage**. The tool skips all
 - An artist needs an English Wikipedia article with steady traffic. The 1,200-capacity persona was chosen so most shortlisted acts should have one, but smaller or newer acts may still come back unlabeled.
 - It is a free first screen, not a replacement for paid music analytics (for example Chartmetric or Soundcharts) or past ticket sales, which a venue this size may also use.
 - Views of redirect pages are not added to the target article.
+- An article that was created or renamed recently has a shorter history, because views from before a rename stay under the old title (for example, MJ Lenderman's data starts in October 2023).
 - Exact titles are needed; there is no fuzzy artist search.
 - The cached copy is refreshed by hand and can be weeks old; the banner and data-through dates show its age.
 - Decisions live in one browser and do not sync between devices or people. The CSV export is the backup.
+
+## Build history
+
+Built in seven feature steps on Nov 12, 2026 and committed through GitHub's web upload. Commit titles are GitHub's default "Add files via upload"; from 4:08 PM on, each commit's description names the change. Times are Eastern.
+
+| Commit | Time | What it added |
+|---|---|---|
+| `7de0430` | 3:11 PM | Step 1: shortlist box, input checks, Wikipedia title lookup (a 3:09 PM upload into a subfolder was deleted at 3:10 PM) |
+| `a862daa` | 3:18 PM | Step 2: page-view fetch, median trend label (F1), year-ago comparison (F2), ranking, settings |
+| `ae4d1da` | 3:46 PM | Step 3: seasonal peak flag (F3) |
+| `50614ca` | 3:47 PM | Step 4: spike detector with edit-history and Pageviews links (F4) |
+| `2062eb6` | 3:48 PM | Step 5: suggested next step and saved Offer / Watch / Pass decisions (F5) |
+| `b58fb15` | 3:48 PM | Step 6: CSV export with formula guard (F6); `2d56e2c` re-uploaded the same files with no changes |
+| `bdaaf94` | 3:50 PM | Step 7: status banner, run log, cached-copy fallback, offline-copy button, outage test switch (F7) |
+| `ef0b36d` | 4:08 PM | Scope change: persona moved to a 1,200-capacity independent venue |
+| `9007c82` | 4:24 PM | Cached copy of real page views for a 10-artist shortlist |
+| `c9785ab` | 4:27 PM | Security headers (`vercel.json`); this upload came from an older copy of the files and put back the old header text |
+| `fbab0f0` | 4:32 PM | Restored the 1,200-capacity header; added this README and the architecture diagram |
+
+Steps 2–7 were uploaded a few minutes apart and checked together on the live site afterwards, not one at a time. The reverted header in `c9785ab` was caught by checking the live page after deploying.
 
 ## Tools
 
