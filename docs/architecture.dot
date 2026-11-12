@@ -1,0 +1,48 @@
+digraph BookingRadar {
+  graph [rankdir=TB, fontname="Arial", nodesep=0.35, ranksep=0.32, pad=0.2, bgcolor="white", newrank=true, splines=spline];
+  node  [shape=box, style="rounded,filled", fillcolor="white", color="#33415c", fontname="Arial", fontsize=11, margin="0.14,0.07", penwidth=1.2];
+  edge  [color="#33415c", fontname="Arial", fontsize=9.5, fontcolor="#33415c", arrowsize=0.7, penwidth=1.1];
+
+  U   [label=<<b>Talent buyer</b><br/><font point-size="9.5">constructed persona, 1,200-capacity venue</font>>, fillcolor="#e8f3ec", color="#1f7a45"];
+  IN  [label=<<font point-size="8.5" color="#5b6475">INTERFACE · index.html on Vercel</font><br/><b>Shortlist box</b> (up to 10 Wikipedia titles)<br/>+ Settings (thresholds, outage test switch)>];
+  V   [label=<<font point-size="8.5" color="#5b6475">LOGIC · app.js</font><br/><b>1. Validate input</b><br/>count, duplicates, title rules>];
+  E1  [label=<<b>Fix hint beside the box</b><br/>no request sent>, fillcolor="#fdecea", color="#b42318", fontcolor="#7a1a12"];
+  A   [label=<<font point-size="8.5" color="#5b6475">PUBLIC DATA SERVICE</font><br/><b>MediaWiki Action API</b><br/>en.wikipedia.org, one batched call>, shape=cylinder, style="filled", fillcolor="#eef2f8"];
+  R   [label=<<font point-size="8.5" color="#5b6475">LOGIC · app.js</font><br/><b>2. Resolve titles</b><br/>redirects, missing, disambiguation>];
+  P   [label=<<font point-size="8.5" color="#5b6475">PUBLIC DATA SERVICE</font><br/><b>Wikimedia Pageviews API</b><br/>free, no key, daily data since 2015>, shape=cylinder, style="filled", fillcolor="#eef2f8"];
+  F   [label=<<font point-size="8.5" color="#5b6475">LOGIC · app.js</font><br/><b>3. Fetch daily page views</b><br/>one artist at a time, 8-second timeout>];
+  S   [label=<<font point-size="8.5" color="#5b6475">STORAGE · GitHub repo</font><br/><b>data/snapshot.json</b><br/>cached copy, dated>, shape=cylinder, style="filled", fillcolor="#fff7e6", color="#9a6700"];
+  C   [label=<<font point-size="8.5" color="#5b6475">LOGIC · trend.js</font><br/><b>4. Calculate per artist</b><br/>median rule, year-ago, seasonal peak, spikes>];
+  E2  [label=<<b>Row message</b><br/>"No data available"; other rows continue>, fillcolor="#fdecea", color="#b42318", fontcolor="#7a1a12"];
+  OUT [label=<<font point-size="8.5" color="#5b6475">INTERFACE · OUTPUT</font><br/><b>Ranked results table + status banner</b><br/>label, suggested next step, spike links,<br/>source tag (live or cached), data-through date>, penwidth=1.8];
+  H   [label=<<font point-size="8.5" color="#1f7a45">HUMAN REVIEW</font><br/><b>Booker checks spike sources</b><br/>(edit history, Pageviews tool), then records<br/>Offer / Watch / Pass + reason>, shape=box, fillcolor="#e8f3ec", color="#1f7a45"];
+  L   [label=<<font point-size="8.5" color="#5b6475">STORAGE · this browser only</font><br/><b>localStorage</b><br/>shortlist, settings, decisions + time>, shape=cylinder, style="filled", fillcolor="#fff7e6", color="#9a6700"];
+  X   [label=<<font point-size="8.5" color="#5b6475">OUTPUT</font><br/><b>CSV export</b><br/>open format, provenance columns>, shape=box];
+  LOG [label=<<b>What is logged</b><br align="left"/>• Decision, reason, timestamp (localStorage)<br align="left"/>• Run summary per artist: live or cached,<br align="left"/>   data-through date, error message<br align="left"/>• Not collected: names, emails, accounts, keys<br align="left"/><font color="#b42318">Red dashed arrows = failure and fallback paths</font><br align="left"/>>, shape=note, fillcolor="#f4f6fa", color="#9aa5b8", fontsize=10];
+
+  { rank=same; V; E1 }
+  { rank=same; A; R }
+  { rank=same; P; F; S }
+  { rank=same; C; E2 }
+  { rank=same; H; LOG }
+  { rank=same; L; X }
+
+  U -> IN -> V;
+  V -> R [label=" valid"];
+  V -> E1 [label=" invalid", style=dashed, color="#b42318", fontcolor="#b42318"];
+  A -> R [dir=both, label=" lookup\n (if down, keep\n typed titles)"];
+  R -> F;
+  P -> F [dir=both, label=" per artist"];
+  F -> S [label=" error or\n timeout", style=dashed, color="#b42318", fontcolor="#b42318"];
+  F -> C [label=" live series"];
+  S -> C [label=" cached series", style=dashed, color="#b42318", fontcolor="#b42318"];
+  S -> E2 [label=" artist not\n in cache", style=dashed, color="#b42318", fontcolor="#b42318"];
+  C -> OUT;
+  E2 -> OUT [style=dashed, color="#b42318"];
+  OUT -> H;
+  H -> L [label=" saved"];
+  L -> X;
+  OUT -> X [label=" table rows"];
+  H -> LOG [style=invis];
+  A -> P [style=invis];
+}

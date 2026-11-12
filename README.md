@@ -5,7 +5,7 @@ Rank a shortlist of touring acts by public attention trend before making offers.
 Student project for MIS 480S Strategic Technology Management (Project 2), Binghamton University, Fall 2026.
 
 - **Live site:** ADD THE PRODUCTION URL FROM VERCEL HERE (the short `*.vercel.app` address, not a preview link)
-- **User:** a talent buyer at a 350-capacity independent venue in upstate New York who books about 15 touring acts a month. This is a **constructed persona**; the venue is fictional.
+- **User:** a talent buyer at a 1,200-capacity independent venue in upstate New York that books about 10 touring acts a month. This is a **constructed persona**: the venue is fictional and is assumed to have no paid music-analytics subscription.
 - **Decision supported:** which acts on a shortlist of 5–10 get offers, and how aggressively.
 
 ## What it does
@@ -96,7 +96,8 @@ Settings → tick **Test mode: simulate a live-data outage**. The tool skips all
 ## Known limits
 
 - Page views measure public attention, not ticket demand, and English Wikipedia under-represents some audiences and regions.
-- An artist needs an English Wikipedia article with steady traffic. Many emerging acts that play 300–400 capacity rooms have no article, or too little traffic to label.
+- An artist needs an English Wikipedia article with steady traffic. The 1,200-capacity persona was chosen so most shortlisted acts should have one, but smaller or newer acts may still come back unlabeled.
+- It is a free first screen, not a replacement for paid music analytics (for example Chartmetric or Soundcharts) or past ticket sales, which a venue this size may also use.
 - Views of redirect pages are not added to the target article.
 - Exact titles are needed; there is no fuzzy artist search.
 - The cached copy is refreshed by hand and can be weeks old; the banner and data-through dates show its age.
