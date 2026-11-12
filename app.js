@@ -259,7 +259,19 @@
   }
 
   // ---------- Rendering ----------
-  var COLUMNS = ['#', 'Artist', 'Trend (F1)', 'Median views per day (F2)', 'Data'];
+  var COLUMNS = ['#', 'Artist', 'Trend (F1)', 'Median views per day (F2)', 'Seasonal peak (F3)', 'Data'];
+
+  function seasonCell(row) {
+    if (!row.analysis) return [];
+    var s = row.analysis.season;
+    var detail = s.years.map(function (y) {
+      return y.year + ': ' + (y.qualifies ? Trend.MONTHS[y.month].slice(0, 3) : 'no clear peak');
+    }).join(', ');
+    if (s.status === 'short') return [el('span', { className: 'small', text: 'Not enough full years of data' })];
+    if (s.status === 'none') return [el('span', { text: 'No repeating peak month' }), el('div', { className: 'small', text: detail })];
+    return [el('strong', { text: 'Peaks in ' + Trend.MONTHS[s.month] }),
+      el('div', { className: 'small', text: s.count + ' of ' + s.of + ' years. ' + detail })];
+  }
 
   function analyzeRow(row) {
     row.analysis = row.series ? Trend.analyze(row.series, state.settings) : null;
@@ -329,7 +341,8 @@
         el('td', { 'data-label': COLUMNS[1] }, artist),
         el('td', { 'data-label': COLUMNS[2] }, trendCell(row)),
         el('td', { 'data-label': COLUMNS[3], className: 'num' }, mediansCell(row)),
-        el('td', { 'data-label': COLUMNS[4] }, dataCell(row))
+        el('td', { 'data-label': COLUMNS[4] }, seasonCell(row)),
+        el('td', { 'data-label': COLUMNS[5] }, dataCell(row))
       ]));
     });
   }

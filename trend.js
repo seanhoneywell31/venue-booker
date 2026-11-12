@@ -91,15 +91,56 @@
     return r;
   }
 
+  // ---------- F3: seasonality ----------
+  // For each of the last three complete calendar years, find the month with the
+  // highest average daily views. A year counts only if that month is at least 25%
+  // above the year's average day and the year has 300+ days of data. If the same
+  // month qualifies in two or more years, the artist "peaks in" that month.
+  var SEASON_MIN_DAYS = 300, SEASON_LIFT = 1.25;
+
+  function seasonality(series) {
+    var lastYear = new Date(lastDay(series)).getUTCFullYear();
+    var years = [];
+    for (var y = lastYear - 3; y <= lastYear - 1; y++) {
+      var totals = [], days = [], cover = 0, sum = 0, n = 0;
+      for (var m = 0; m < 12; m++) { totals.push(0); days.push(0); }
+      for (var t = Date.UTC(y, 0, 1); t <= Date.UTC(y, 11, 31); t += DAY) {
+        var i = Math.round((t - series.start) / DAY);
+        var v = (i >= 0 && i < series.views.length) ? series.views[i] : null;
+        var mo = new Date(t).getUTCMonth();
+        days[mo]++; n++;
+        if (v !== null) { cover++; totals[mo] += v; sum += v; }
+      }
+      if (cover < SEASON_MIN_DAYS) continue;
+      var avgDay = sum / n, peak = 0, best = -1;
+      for (var k = 0; k < 12; k++) {
+        var perDay = totals[k] / days[k];
+        if (perDay > best) { best = perDay; peak = k; }
+      }
+      var lift = avgDay > 0 ? best / avgDay : 0;
+      years.push({ year: y, month: peak, lift: lift, qualifies: lift >= SEASON_LIFT });
+    }
+    if (years.length < 2) return { status: 'short', years: years };
+    var counts = {};
+    years.forEach(function (yr) { if (yr.qualifies) counts[yr.month] = (counts[yr.month] || 0) + 1; });
+    var top = null;
+    Object.keys(counts).forEach(function (mKey) {
+      if (counts[mKey] >= 2 && (top === null || counts[mKey] > counts[top])) top = +mKey;
+    });
+    if (top === null) return { status: 'none', years: years };
+    return { status: 'peak', month: top, count: counts[top], of: years.length, years: years };
+  }
+
   function analyze(series, opts) {
-    return { trend: trend(series, opts) };
+    return { trend: trend(series, opts), season: seasonality(series) };
   }
 
   var api = {
     DAY: DAY, MONTHS: MONTHS, WINDOW: WINDOW, SHIFT: SHIFT, MIN_HISTORY: MIN_HISTORY,
     dayMs: dayMs, parseDay: parseDay, isoDay: isoDay, compactDay: compactDay, niceDay: niceDay, niceRange: niceRange,
     seriesFromItems: seriesFromItems, lastDay: lastDay, windowValues: windowValues, median: median,
-    trend: trend, analyze: analyze
+    trend: trend, seasonality: seasonality, SEASON_LIFT: SEASON_LIFT, SEASON_MIN_DAYS: SEASON_MIN_DAYS,
+    analyze: analyze
   };
   root.Trend = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
