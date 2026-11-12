@@ -51,7 +51,13 @@
 
     <section class="panel" aria-labelledby="results-h">
       <h2 id="results-h">2. Results</h2>
-      <p id="progress" class="progress" aria-live="polite">Enter a shortlist and click Check trends.</p>
+      <div class="results-bar">
+        <p id="progress" class="progress" aria-live="polite">Enter a shortlist and click Check trends.</p>
+        <div class="export">
+          <button id="export" type="button" disabled>Export CSV</button>
+          <span id="export-msg" class="small" aria-live="polite"></span>
+        </div>
+      </div>
       <div class="table-wrap">
         <table id="results" class="results">
           <thead></thead>

@@ -394,7 +394,81 @@
     ];
   }
 
+  // ---------- F6: CSV export ----------
+  var SOURCE_TEXT = 'Wikimedia Analytics API, per-article daily page views, en.wikipedia.org, all-access, user (CC0)';
+
+  // A text cell that starts with = + - @ (or tab/return) could run as a formula in a
+  // spreadsheet. A leading apostrophe makes the spreadsheet treat it as plain text.
+  function guardText(s) {
+    s = String(s === null || s === undefined ? '' : s);
+    return /^[=+\-@\t\r]/.test(s) ? "'" + s : s;
+  }
+  function csvCell(v) {
+    if (typeof v === 'number') return isFinite(v) ? String(v) : '';
+    return '"' + guardText(v).replace(/"/g, '""') + '"';
+  }
+
+  function labelText(row) {
+    if (titleProblem(row)) return 'Title problem';
+    if (row.dataError) return 'No data';
+    if (!row.analysis) return '';
+    var t = row.analysis.trend;
+    return t.label || (t.status === 'low' ? 'No label: too little traffic' : 'No label: not enough history');
+  }
+
+  function exportRecords() {
+    state.rows.forEach(function (r) { if (r.series) analyzeRow(r); });
+    var g = sortedRows();
+    return g.labeled.concat(g.other).map(function (row) {
+      var a = row.analysis, t = a && a.trend, s = a && a.season, sp = a && a.spikes;
+      var d = state.decisions[row.resolved] || {};
+      var round1 = function (x) { return Math.round(x * 10) / 10; };
+      return {
+        rank: g.labeled.indexOf(row) >= 0 ? g.labeled.indexOf(row) + 1 : '',
+        artist_input: row.input,
+        wikipedia_title: row.resolved,
+        label: labelText(row),
+        change_pct: t && t.changePct !== null ? round1(t.changePct) : '',
+        median_last_90_days: t ? t.medRecent : '',
+        median_same_90_days_52_weeks_earlier: t ? t.medPrior : '',
+        last_90_days: t ? Trend.isoDay(t.recentStart) + ' to ' + Trend.isoDay(t.recentEnd) : '',
+        comparison_90_days: t ? Trend.isoDay(t.priorStart) + ' to ' + Trend.isoDay(t.priorEnd) : '',
+        seasonal_peak: s ? (s.status === 'peak' ? Trend.MONTHS[s.month] : s.status === 'none' ? 'none' : 'not enough full years') : '',
+        spike_events_12_months: sp ? (sp.skipped ? 'not checked' : sp.events.length) : '',
+        spike_peaks: sp && !sp.skipped ? sp.events.map(function (e) {
+          return Trend.isoDay(e.peakDay) + ' (' + e.peakViews + ' views, ' + e.multiple.toFixed(1) + 'x)';
+        }).join('; ') : '',
+        suggested_next_step: a ? a.nextStep : '',
+        decision: d.decision || '',
+        reason: d.reason || '',
+        decided_at: d.at || '',
+        data_source: row.source || '',
+        data_through: t ? Trend.isoDay(t.dataThrough) : '',
+        retrieved_at: row.retrievedAt || '',
+        source: row.series ? SOURCE_TEXT : '',
+        article_url: titleProblem(row) ? '' : articleUrl(row.resolved),
+        note: titleProblem(row) || row.dataError || ''
+      };
+    });
+  }
+
+  function exportCsv() {
+    var recs = exportRecords();
+    if (!recs.length) return;
+    var cols = Object.keys(recs[0]);
+    var lines = [cols.join(',')].concat(recs.map(function (r) { return cols.map(function (c) { return csvCell(r[c]); }).join(','); }));
+    var blob = new Blob(['﻿' + lines.join('\r\n') + '\r\n'], { type: 'text/csv;charset=utf-8' });
+    var url = URL.createObjectURL(blob);
+    var a = el('a', { href: url, download: 'booking-radar-' + Trend.isoDay(Date.now()) + '.csv' });
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
+    $('export-msg').textContent = 'Exported ' + recs.length + ' rows.';
+  }
+
   function renderTable() {
+    $('export').disabled = state.busy || !state.rows.length;
     var thead = $('results').tHead, tbody = $('results').tBodies[0];
     thead.textContent = ''; tbody.textContent = '';
     if (!state.rows.length) return;
@@ -481,6 +555,7 @@
     box.value = load(STORE.shortlist, '');
     box.addEventListener('input', function () { updateCount(); save(STORE.shortlist, box.value); });
     $('check').addEventListener('click', runCheck);
+    $('export').addEventListener('click', exportCsv);
     state.settings = loadSettings();
     state.decisions = load(STORE.decisions, {}) || {};
     var nSaved = Object.keys(state.decisions).filter(function (k) { return state.decisions[k].decision || state.decisions[k].reason; }).length;
