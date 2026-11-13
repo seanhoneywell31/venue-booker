@@ -11,7 +11,8 @@
   var WIKI = 'https://en.wikipedia.org';
   var ACTION_API = WIKI + '/w/api.php';
   var PAGEVIEWS_API = 'https://wikimedia.org/api/rest_v1/metrics/pageviews/per-article/en.wikipedia.org/all-access/user/';
-  var STORE = { shortlist: 'bookingRadar.shortlist', settings: 'bookingRadar.settings', decisions: 'bookingRadar.decisions', lastRun: 'bookingRadar.lastRun' };
+  var STORE = { shortlist: 'bookingRadar.shortlist', settings: 'bookingRadar.settings', decisions: 'bookingRadar.decisions', lastRun: 'bookingRadar.lastRun', history: 'bookingRadar.history' };
+  var SAMPLE_HISTORY_URL = 'data/sample_history.csv';
   var SNAPSHOT_URL = 'data/snapshot.json';
   var DECISIONS = [['', 'Choose...'], ['offer', 'Offer'], ['watch', 'Watch'], ['pass', 'Pass']];
   var REASON_MAX = 200;
@@ -26,7 +27,7 @@
   };
 
   var state = { rows: [], busy: false, settings: null, decisions: {}, snapshot: null, snapshotNote: null,
-                lastRun: null, simulateOutage: false };
+                lastRun: null, simulateOutage: false, history: null };
 
   // ---------- Small helpers ----------
   function $(id) { return document.getElementById(id); }
@@ -391,7 +392,7 @@
   }
 
   // ---------- Rendering ----------
-  var COLUMNS = ['#', 'Artist', 'Trend (F1)', 'Median views per day (F2)', 'Seasonal peak (F3)', 'Spikes, last 12 months (F4)', 'Next step and your decision (F5)', 'Data'];
+  var COLUMNS = ['#', 'Artist', 'Trend (F1)', 'Median views per day (F2)', 'Seasonal peak (F3)', 'Spikes, last 12 months (F4)', 'Here before (F8)', 'Next step and your decision (F5)', 'Data'];
 
   // ---------- F5: the booker's decision, saved only in this browser ----------
   function fmtTime(iso) {
@@ -568,6 +569,9 @@
         decision: d.decision || '',
         reason: d.reason || '',
         decided_at: d.at || '',
+        shows_here: state.history && !titleProblem(row) ? rowShows(row).length : '',
+        last_show_here: rowShows(row).length ? Trend.isoDay(rowShows(row)[0].date) : '',
+        avg_sell_through_pct: rowShows(row).length ? Math.round(rowShows(row).reduce(function (s, x) { return s + History.sellThrough(x); }, 0) / rowShows(row).length * 10) / 10 : '',
         data_source: row.source === 'cached'
           ? 'cached copy' + (state.snapshot && state.snapshot.savedAt ? ' saved ' + Trend.isoDay(Date.parse(state.snapshot.savedAt)) : '')
           : (row.source || ''),
@@ -595,10 +599,176 @@
     $('export-msg').textContent = 'Exported ' + recs.length + ' rows.';
   }
 
+  // ---------- F8: local history (the venue's past shows) and label check ----------
+  function rowNames(row) { return [row.resolved, row.title, row.input, row.redirectedFrom]; }
+
+  function rowShows(row) {
+    if (!state.history || titleProblem(row)) return [];
+    return History.showsFor(state.history.shows, rowNames(row));
+  }
+
+  function pct(x) { return Math.round(x) + '%'; }
+
+  function checkText(c) {
+    if (c.status === 'ok') return 'label then: ' + c.label;
+    if (c.status === 'low') return 'label then: too little traffic';
+    return 'label then: too early to check';
+  }
+
+  function historyCell(row) {
+    if (titleProblem(row)) return [];
+    if (!state.history) return [el('span', { className: 'small', text: 'No venue history loaded' })];
+    var shows = rowShows(row);
+    if (!shows.length) return [el('span', { className: 'small', text: 'Not in your venue history' })];
+    var avg = shows.reduce(function (s, x) { return s + History.sellThrough(x); }, 0) / shows.length;
+    var list = el('ul', { className: 'history-list' }, shows.slice(0, 2).map(function (sh) {
+      var parts = Trend.niceDay(sh.date) + ': ' + pct(History.sellThrough(sh)) + ' sold';
+      if (row.series) parts += '; ' + checkText(History.labelBefore(row.series, sh.date, state.settings));
+      return el('li', { text: parts });
+    }));
+    return [
+      el('div', { text: shows.length + (shows.length === 1 ? ' show here, ' : ' shows here, average ') + pct(avg) + ' sold' }),
+      list,
+      shows.length > 2 ? el('div', { className: 'small', text: (shows.length - 2) + ' older show' + (shows.length - 2 === 1 ? '' : 's') + ' not listed.' }) : null
+    ];
+  }
+
+  // Every past show of an artist on this shortlist, with the label it would have had
+  // when offers went out, grouped by that label.
+  function labelCheckItems() {
+    var items = [];
+    state.rows.forEach(function (row) {
+      if (!row.series) return;
+      rowShows(row).forEach(function (sh) {
+        items.push({ row: row, show: sh, check: History.labelBefore(row.series, sh.date, state.settings) });
+      });
+    });
+    return items;
+  }
+
+  function renderLabelCheck() {
+    var box = $('label-check'), body = $('label-check-body');
+    body.textContent = '';
+    if (!state.history || !state.rows.length || state.busy) { box.hidden = true; return; }
+    var items = labelCheckItems();
+    box.hidden = false;
+    if (!items.length) {
+      body.appendChild(el('p', { className: 'small', text: 'None of the artists on this shortlist appear in your venue history.' }));
+      return;
+    }
+    var groups = History.summarize(items);
+    var table = el('table', { className: 'mini' }, [
+      el('thead', null, [el('tr', null, [
+        el('th', { scope: 'col', text: 'Label ' + History.LEAD_DAYS + ' days before the show' }),
+        el('th', { scope: 'col', text: 'Shows' }),
+        el('th', { scope: 'col', text: 'Average sold' })
+      ])]),
+      el('tbody', null, groups.map(function (g) {
+        return el('tr', null, [
+          el('td', { text: g.name }),
+          el('td', { className: 'num', text: String(g.n) }),
+          el('td', { className: 'num', text: g.avg === null ? '' : pct(g.avg) })
+        ]);
+      }))
+    ]);
+    var checked = items.filter(function (it) { return it.check.status === 'ok'; }).length;
+    body.appendChild(table);
+    body.appendChild(el('p', { className: 'small', text:
+      checked + ' of ' + items.length + ' past shows by artists on this shortlist could be checked. Each label is recalculated from page views up to ' +
+      History.LEAD_DAYS + ' days before the show, roughly when offers go out. A handful of shows gives a pattern, not proof; if Rising acts did not sell better here, do not lean on the label.' }));
+    if (state.history.source === 'sample') {
+      body.appendChild(el('p', { className: 'row-error', text: 'Sample history: constructed for a fictional venue. The ticket counts are made up, so this check shows how the feature works, not whether the labels are right.' }));
+    }
+  }
+
+  function historyStatus() {
+    var h = state.history;
+    if (!h) { $('history-status').textContent = 'No venue history loaded.'; return; }
+    var acts = {};
+    h.shows.forEach(function (s) { acts[History.key(s.act)] = true; });
+    $('history-status').textContent = 'Loaded ' + h.shows.length + ' past show' + (h.shows.length === 1 ? '' : 's') + ' for ' +
+      Object.keys(acts).length + ' act' + (Object.keys(acts).length === 1 ? '' : 's') + ' from ' +
+      (h.source === 'sample' ? 'the sample file (constructed, not real sales)' : '"' + h.name + '"') +
+      '. Saved in this browser only.';
+  }
+
+  function historyMessages(list) {
+    var ul = $('history-messages');
+    ul.textContent = '';
+    list.forEach(function (m) { ul.appendChild(el('li', { className: m.type, text: m.text })); });
+  }
+
+  function todayUtc() {
+    var d = new Date();
+    return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+  }
+
+  // Reads a history file's text, keeps the valid rows, and lists the rest with line numbers.
+  function acceptHistory(text, source, name) {
+    var res = History.parse(text, todayUtc());
+    var msgs = res.errors.slice(0, 5).map(function (e) {
+      return { type: 'error', text: (e.line ? 'Line ' + e.line + ': ' : '') + e.text + (e.line ? '. Row skipped.' : '') };
+    });
+    if (res.errors.length > 5) msgs.push({ type: 'error', text: (res.errors.length - 5) + ' more rows had problems and were skipped.' });
+    if (res.extra) msgs.push({ type: 'note', text: 'Only the first ' + History.MAX_ROWS + ' shows were loaded; ' + res.extra + ' more were ignored.' });
+    if (!res.shows.length) {
+      msgs.unshift({ type: 'error', text: 'No usable shows in this file, so nothing was loaded.' + (state.history ? ' Your earlier history is still in use.' : '') });
+      historyMessages(msgs);
+      return;
+    }
+    state.history = { source: source, name: name, loadedAt: new Date().toISOString(),
+                      shows: res.shows.map(function (s) { return { act: s.act, date: s.date, capacity: s.capacity, sold: s.sold, guarantee: s.guarantee }; }) };
+    if (!save(STORE.history, state.history)) msgs.push({ type: 'note', text: 'This browser would not save the history, so it will be gone after a reload.' });
+    historyMessages(msgs);
+    historyStatus();
+    renderTable();
+  }
+
+  function loadHistoryFile(file) {
+    if (!file) return;
+    if (file.size > History.MAX_BYTES) {
+      historyMessages([{ type: 'error', text: 'That file is larger than ' + Math.round(History.MAX_BYTES / 1024) + ' KB, so it was not read. A venue history should be a small CSV file.' }]);
+      return;
+    }
+    var reader = new FileReader();
+    reader.onload = function () { acceptHistory(String(reader.result), 'file', file.name.slice(0, 80)); };
+    reader.onerror = function () { historyMessages([{ type: 'error', text: 'The file could not be read.' }]); };
+    reader.readAsText(file);
+  }
+
+  async function loadSampleHistory() {
+    try {
+      var r = await fetch(SAMPLE_HISTORY_URL, { cache: 'no-store' });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      acceptHistory(await r.text(), 'sample', 'sample_history.csv');
+    } catch (e) {
+      historyMessages([{ type: 'error', text: 'The sample history could not be loaded (' + e.message + ').' }]);
+    }
+  }
+
+  function clearHistory() {
+    state.history = null;
+    try { localStorage.removeItem(STORE.history); } catch (e) { /* nothing saved */ }
+    $('history-file').value = '';
+    historyMessages([{ type: 'note', text: 'Venue history cleared from this browser.' }]);
+    historyStatus();
+    renderTable();
+  }
+
+  function loadSavedHistory() {
+    var h = load(STORE.history, null);
+    if (!h || !Array.isArray(h.shows)) return null;
+    var shows = h.shows.filter(function (s) {
+      return s && typeof s.act === 'string' && isFinite(s.date) && isFinite(s.capacity) && isFinite(s.sold) && s.capacity > 0 && s.sold <= s.capacity;
+    });
+    return shows.length ? { source: h.source === 'sample' ? 'sample' : 'file', name: String(h.name || 'saved file').slice(0, 80), loadedAt: h.loadedAt, shows: shows } : null;
+  }
+
   function renderTable() {
     $('export').disabled = state.busy || !state.rows.length;
     var thead = $('results').tHead, tbody = $('results').tBodies[0];
     thead.textContent = ''; tbody.textContent = '';
+    renderLabelCheck();
     if (!state.rows.length) return;
     state.rows.forEach(function (r) { if (r.series) analyzeRow(r); });
     thead.appendChild(el('tr', null, COLUMNS.map(function (c) { return el('th', { scope: 'col', text: c }); })));
@@ -618,8 +788,9 @@
         el('td', { 'data-label': COLUMNS[3], className: 'num' }, mediansCell(row)),
         el('td', { 'data-label': COLUMNS[4] }, seasonCell(row)),
         el('td', { 'data-label': COLUMNS[5] }, spikesCell(row)),
-        el('td', { 'data-label': COLUMNS[6] }, decisionCell(row, idx)),
-        el('td', { 'data-label': COLUMNS[7] }, dataCell(row))
+        el('td', { 'data-label': COLUMNS[6] }, historyCell(row)),
+        el('td', { 'data-label': COLUMNS[7] }, decisionCell(row, idx)),
+        el('td', { 'data-label': COLUMNS[8] }, dataCell(row))
       ]));
     });
   }
@@ -713,6 +884,11 @@
     if (!state.lastRun || !Array.isArray(state.lastRun.entries)) state.lastRun = null;
     state.settings = loadSettings();
     state.decisions = load(STORE.decisions, {}) || {};
+    state.history = loadSavedHistory();
+    $('history-file').addEventListener('change', function () { loadHistoryFile(this.files && this.files[0]); });
+    $('history-sample').addEventListener('click', loadSampleHistory);
+    $('history-clear').addEventListener('click', clearHistory);
+    historyStatus();
     var nSaved = Object.keys(state.decisions).filter(function (k) { return state.decisions[k].decision || state.decisions[k].reason; }).length;
     if (nSaved) $('progress').textContent = 'You have saved decisions for ' + nSaved + ' artist' + (nSaved === 1 ? '' : 's') +
       '. Click Check trends to see them next to fresh data.';

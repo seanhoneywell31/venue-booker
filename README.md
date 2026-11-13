@@ -17,8 +17,9 @@ Student project for MIS 480S Strategic Technology Management (Project 2), Bingha
 | F3 Seasonality flag | "Peaks in June" when the same month stands out in two or more of the last three full years |
 | F4 Spike detector | Days far above the artist's usual level, with links to the article's edit history and Wikimedia's Pageviews tool for that week. The tool shows dates, never a cause. |
 | F5 Next step and decision | A suggested next step for each label, plus the booker's own Offer / Watch / Pass and reason, saved in this browser |
-| F6 CSV export | One row per artist with numbers, decision, reason and source columns |
+| F6 CSV export | One row per artist with numbers, decision, reason, venue-history and source columns |
 | F7 Data-source status | A banner saying whether data is live or from the cached copy, a run log, and a fallback to `data/snapshot.json` when the live service fails |
+| F8 Local history and label check | Optional: load the venue's past shows (CSV). Each row shows how the act sold here before, and a label check sets the label each act would have had 90 days before each past show next to how that show sold |
 
 ## How to use it
 
@@ -26,6 +27,7 @@ Student project for MIS 480S Strategic Technology Management (Project 2), Bingha
 2. Click **Check trends**. Titles are checked first; misspelled titles and disambiguation pages get a message saying what to fix.
 3. Read the ranked table. Open spike links to see what happened before deciding.
 4. Record Offer, Watch or Pass with a short reason. Click **Export CSV** to keep a copy.
+5. Optional: open **Venue history**, load your past shows (or the constructed sample), and read the **Here before** column and the label check under the table.
 
 ## How the numbers are calculated
 
@@ -39,7 +41,9 @@ All thresholds are design assumptions, not fitted values. The ones marked *edita
 - **Spikes:** in the last 365 days, a day with at least 3× (editable) the median day of that period. Spike days within 3 days of each other form one event. Not checked for articles under the traffic floor.
 - **Suggested next step:** Rising → "Move early: make an offer before the fee climbs." Steady → "Offer on your usual terms." Fading → "Watch, or offer a lower guarantee." No label → "No usable signal: decide on other evidence." A spike in the last 90 days adds "Check what caused the [date] spike first."
 
-`trend.js` holds all of these rules as plain functions with no network access, so each one can be checked by hand.
+- **Label check (F8):** for each past show, the trend label is recalculated from page views up to 90 days before the show (an assumption for when offers go out), using the same rule and thresholds, and grouped with the show's sell-through (tickets sold ÷ capacity). Shows too early for two years of data are listed as "too early to check".
+
+`trend.js` holds all of these rules as plain functions with no network access, so each one can be checked by hand; `history.js` does the same for the venue history.
 
 ## Data source and permission
 
@@ -47,6 +51,20 @@ All thresholds are design assumptions, not fitted values. The ones marked *edita
 - MediaWiki Action API (`https://en.wikipedia.org/w/api.php`) to resolve redirects and catch missing and disambiguation titles in one batched request.
 - Requests go one at a time and send an `Api-User-Agent` header, following Wikimedia's access policy for browser apps.
 - `data/snapshot.json` is a dated cached copy of real page views saved from the live site. It ships empty.
+
+## Venue history file (F8)
+
+A CSV file with a header row. Lines starting with `#` are ignored.
+
+| Column | Required | Meaning |
+|---|---|---|
+| `act` | yes | The artist's English Wikipedia title, as on the shortlist |
+| `show_date` | yes | Date of the past show, `YYYY-MM-DD` (future dates are refused) |
+| `capacity` | yes | Tickets available, whole number |
+| `tickets_sold` | yes | Tickets sold, whole number, not more than capacity |
+| `guarantee_usd` | no | Fee paid to the act |
+
+Rows with a problem are skipped and listed with their line number; valid rows still load. Files over 200 KB or 500 shows are refused or cut off. `data/sample_history.csv` is **constructed** for the fictional venue: its ticket counts are random numbers, not real sales.
 
 ## Run it locally
 
@@ -79,15 +97,17 @@ Settings → tick **Test mode: simulate a live-data outage**. The tool skips all
 | `index.html` | Page structure |
 | `style.css` | Layout, including the phone layout (rows become cards) |
 | `trend.js` | Calculation rules: windows, medians, labels, seasonality, spikes, next step |
-| `app.js` | Input checks, API calls with an 8-second timeout, cached fallback, table, decisions, CSV and snapshot export |
+| `history.js` | Venue history: CSV reading and checks, matching shows to artists, label check |
+| `app.js` | Input checks, API calls with an 8-second timeout, cached fallback, table, decisions, venue history, CSV and snapshot export |
 | `data/snapshot.json` | Cached copy used when live data fails |
+| `data/sample_history.csv` | Constructed sample venue history (random ticket counts) |
 | `vercel.json` | Security headers: Content-Security-Policy, nosniff, referrer policy |
 | `docs/architecture.png`, `docs/architecture.dot` | Architecture diagram and its Graphviz source |
 
 ## Privacy and security
 
 - No accounts, no tracking, no server code and no API keys.
-- The shortlist, settings, decisions and the last run log are stored only in this browser (`localStorage`). Clearing browser data deletes them.
+- The shortlist, settings, decisions, venue history and the last run log are stored only in this browser (`localStorage`). Clearing browser data deletes them. The history file is read in the browser and never uploaded.
 - Only public article titles are sent to Wikimedia.
 - Everything typed or received from an API is placed on the page as text, never as HTML.
 - CSV text cells that start with `=`, `+`, `-` or `@` get a leading apostrophe so a spreadsheet will not run them as formulas.
@@ -102,7 +122,8 @@ Settings → tick **Test mode: simulate a live-data outage**. The tool skips all
 - An article that was created or renamed recently has a shorter history, because views from before a rename stay under the old title (for example, MJ Lenderman's data starts in October 2023).
 - Exact titles are needed; there is no fuzzy artist search.
 - The cached copy is refreshed by hand and can be weeks old; the banner and data-through dates show its age.
-- Decisions live in one browser and do not sync between devices or people. The CSV export is the backup.
+- Decisions and venue history live in one browser and do not sync between devices or people. The CSV export is the backup.
+- The label check rests on few shows, a fixed 90-day lead time and the venue's own records; it shows a pattern, not proof.
 
 ## Build history
 
@@ -122,7 +143,7 @@ Built in seven feature steps on Nov 12, 2026 and committed through GitHub's web 
 | `c9785ab` | 4:27 PM | Security headers (`vercel.json`); this upload came from an older copy of the files and put back the old header text |
 | `fbab0f0` | 4:32 PM | Restored the 1,200-capacity header; added this README and the architecture diagram |
 
-Steps 2–7 were uploaded a few minutes apart and checked together on the live site afterwards, not one at a time. The reverted header in `c9785ab` was caught by checking the live page after deploying.
+Steps 3–7 were uploaded within four minutes (3:46 to 3:50 PM) and checked together on the live site afterwards, not one at a time. The reverted header in `c9785ab` was caught by checking the live page after deploying.
 
 ## Tools
 

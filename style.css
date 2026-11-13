@@ -146,3 +146,14 @@ a { color: var(--accent); }
   .results td::before { content: attr(data-label); display: block; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--muted); }
   .input-row { flex-wrap: wrap; }
 }
+
+/* F8: venue history and label check */
+.history-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0; }
+.history-actions .field-label { margin: 0; }
+.history-list { margin: 4px 0 0; padding-left: 16px; font-size: 0.85rem; color: var(--muted); }
+.label-check { margin-top: 14px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+.label-check h3 { margin: 0 0 8px; font-size: 1rem; }
+table.mini { border-collapse: collapse; margin-bottom: 8px; }
+table.mini th, table.mini td { text-align: left; padding: 4px 10px; border-bottom: 1px solid var(--line); font-size: 0.9rem; }
+table.mini td.num { text-align: right; font-variant-numeric: tabular-nums; }
+code { font-size: 0.85em; background: var(--bg); padding: 0 3px; border-radius: 3px; }

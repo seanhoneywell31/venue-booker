@@ -61,6 +61,22 @@
           <label for="set-outage">Test mode: simulate a live-data outage (not saved; turns off when you reload)</label>
         </div>
       </details>
+
+      <details id="history" class="settings">
+        <summary>Venue history (optional)</summary>
+        <p class="small">Load your venue's past shows to see how each act sold here before, and to check whether the labels would have pointed the right way. The file is read in this browser and saved only here; nothing is uploaded.</p>
+        <div class="history-actions">
+          <label for="history-file" class="field-label">Past shows (CSV file, up to 200 KB)</label>
+          <input id="history-file" type="file" accept=".csv,text/csv">
+        </div>
+        <div class="history-actions">
+          <button id="history-sample" type="button">Load sample history (constructed)</button>
+          <button id="history-clear" type="button">Clear history</button>
+        </div>
+        <p id="history-status" class="small" aria-live="polite"></p>
+        <ul id="history-messages" class="messages" aria-live="polite"></ul>
+        <p class="small">Columns, with a header row: <code>act</code> (the artist's Wikipedia title), <code>show_date</code> (YYYY-MM-DD), <code>capacity</code>, <code>tickets_sold</code>, and optionally <code>guarantee_usd</code>. <a href="data/sample_history.csv" download>Download the sample file</a> to see the format.</p>
+      </details>
     </section>
 
     <section class="panel" aria-labelledby="results-h">
@@ -80,6 +96,10 @@
           <tbody></tbody>
         </table>
       </div>
+      <section id="label-check" class="label-check" aria-labelledby="label-check-h" hidden>
+        <h3 id="label-check-h">Label check against your past shows (F8)</h3>
+        <div id="label-check-body"></div>
+      </section>
       <details class="method">
         <summary>How the labels work</summary>
         <ul>
@@ -88,6 +108,7 @@
           <li>Rising and Fading thresholds are set in Settings (default &plusmn;20%). They are judgment calls, not fitted values.</li>
           <li>Seasonal peak: the same month had the highest average daily views, at least 25% above that year's average day, in two or more of the last three full years. Useful for timing a date; the year-over-year comparison already keeps normal seasonal swings out of the label.</li>
           <li>Spikes: days in the last 12 months with at least 3&times; (editable) the median day of that period; spike days within 3 days of each other count as one event. The tool shows dates and links, never a cause. Open the edit history to see what happened.</li>
+          <li>Venue history (F8): for each past show of an artist on the shortlist, the label is recalculated from page views up to 90 days before the show (roughly when offers go out) and set next to how the show sold. A handful of shows gives a pattern, not proof.</li>
           <li>Page views measure public attention. They are not ticket sales, and English Wikipedia under-represents some audiences.</li>
         </ul>
       </details>
@@ -96,12 +117,13 @@
 
   <footer class="site-footer">
     <div class="wrap">
-      <p><strong>Privacy.</strong> No account and no tracking. Your shortlist, settings and decisions are saved only in this browser; clearing browser data deletes them. Only public article titles are sent to Wikimedia.</p>
+      <p><strong>Privacy.</strong> No account and no tracking. Your shortlist, settings, decisions and venue history are saved only in this browser; clearing browser data deletes them. Only public article titles are sent to Wikimedia.</p>
       <p><strong>You decide.</strong> The next step is a suggestion based on one public signal. Booking Radar never sends offers or messages.</p>
     </div>
   </footer>
 
   <script src="trend.js"></script>
+  <script src="history.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

@@ -14,16 +14,19 @@ digraph BookingRadar {
   S   [label=<<font point-size="8.5" color="#5b6475">STORAGE · GitHub repo</font><br/><b>data/snapshot.json</b><br/>cached copy, dated>, shape=cylinder, style="filled", fillcolor="#fff7e6", color="#9a6700"];
   C   [label=<<font point-size="8.5" color="#5b6475">LOGIC · trend.js</font><br/><b>4. Calculate per artist</b><br/>median rule, year-ago, seasonal peak, spikes>];
   E2  [label=<<b>Row message</b><br/>"No data available"; other rows continue>, fillcolor="#fdecea", color="#b42318", fontcolor="#7a1a12"];
+  HV  [label=<<font point-size="8.5" color="#5b6475">VENUE DATA · buyer's own file (optional)</font><br/><b>Past shows CSV</b><br/>checked row by row; bad rows skipped<br/>with line numbers; kept in this browser>, shape=cylinder, style="filled", fillcolor="#fff7e6", color="#9a6700"];
+  LC  [label=<<font point-size="8.5" color="#5b6475">LOGIC · history.js (F8)</font><br/><b>5. Local history + label check</b><br/>past sell-through per act; label 90 days<br/>before each show vs how it sold>];
   OUT [label=<<font point-size="8.5" color="#5b6475">INTERFACE · OUTPUT</font><br/><b>Ranked results table + status banner</b><br/>label, suggested next step, spike links,<br/>source tag (live or cached), data-through date>, penwidth=1.8];
-  H   [label=<<font point-size="8.5" color="#1f7a45">HUMAN REVIEW</font><br/><b>Booker checks spike sources</b><br/>(edit history, Pageviews tool), then records<br/>Offer / Watch / Pass + reason>, shape=box, fillcolor="#e8f3ec", color="#1f7a45"];
-  L   [label=<<font point-size="8.5" color="#5b6475">STORAGE · this browser only</font><br/><b>localStorage</b><br/>shortlist, settings, decisions + time>, shape=cylinder, style="filled", fillcolor="#fff7e6", color="#9a6700"];
+  H   [label=<<font point-size="8.5" color="#1f7a45">HUMAN REVIEW</font><br/><b>Buyer checks spike sources</b><br/>(edit history, Pageviews tool), then records<br/>Offer / Watch / Pass + reason>, shape=box, fillcolor="#e8f3ec", color="#1f7a45"];
+  L   [label=<<font point-size="8.5" color="#5b6475">STORAGE · this browser only</font><br/><b>localStorage</b><br/>shortlist, settings, decisions + time,<br/>venue history>, shape=cylinder, style="filled", fillcolor="#fff7e6", color="#9a6700"];
   X   [label=<<font point-size="8.5" color="#5b6475">OUTPUT</font><br/><b>CSV export</b><br/>open format, provenance columns>, shape=box];
-  LOG [label=<<b>What is logged</b><br align="left"/>• Decision, reason, timestamp (localStorage)<br align="left"/>• Run summary per artist: live or cached,<br align="left"/>   data-through date, error message<br align="left"/>• Not collected: names, emails, accounts, keys<br align="left"/><font color="#b42318">Red dashed arrows = failure and fallback paths</font><br align="left"/>>, shape=note, fillcolor="#f4f6fa", color="#9aa5b8", fontsize=10];
+  LOG [label=<<b>What is logged</b><br align="left"/>• Decision, reason, timestamp (localStorage)<br align="left"/>• Run summary per artist: live or cached,<br align="left"/>   data-through date, error message<br align="left"/>• Venue history file stays in this browser<br align="left"/>• Not collected: names, emails, accounts, keys<br align="left"/><font color="#b42318">Red dashed arrows = failure and fallback paths</font><br align="left"/>>, shape=note, fillcolor="#f4f6fa", color="#9aa5b8", fontsize=10];
 
   { rank=same; V; E1 }
   { rank=same; A; R }
   { rank=same; P; F; S }
   { rank=same; C; E2 }
+  { rank=same; LC; HV }
   { rank=same; H; LOG }
   { rank=same; L; X }
 
@@ -37,7 +40,9 @@ digraph BookingRadar {
   F -> C [label=" live series"];
   S -> C [label=" cached series", style=dashed, color="#b42318", fontcolor="#b42318"];
   S -> E2 [label=" artist not\n in cache", style=dashed, color="#b42318", fontcolor="#b42318"];
-  C -> OUT;
+  C -> LC;
+  HV -> LC [label=" past shows"];
+  LC -> OUT [label=" Here before column,\n label check"];
   E2 -> OUT [style=dashed, color="#b42318"];
   OUT -> H;
   H -> L [label=" saved"];

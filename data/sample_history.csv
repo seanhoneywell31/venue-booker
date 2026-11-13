@@ -1,0 +1,16 @@
+# Sample venue history for Booking Radar. CONSTRUCTED for a fictional 1,200-capacity venue.
+# The ticket counts are random numbers, not real sales, and say nothing about these artists.
+# Lines starting with # are ignored. guarantee_usd is optional and left blank here.
+act,show_date,capacity,tickets_sold,guarantee_usd
+Waxahatchee,2024-02-17,1200,854,
+The Beths,2024-10-05,1200,1172,
+Momma (band),2024-11-15,1200,867,
+Snail Mail (musician),2025-02-08,1200,640,
+Waxahatchee,2025-04-12,1200,619,
+Wednesday (American band),2025-06-14,1200,741,
+Soccer Mommy,2025-09-27,1200,799,
+Alvvays,2025-10-18,1200,583,
+Geese (band),2025-11-01,1200,1037,
+The Beths,2026-03-21,1200,1003,
+Momma (band),2026-05-30,1200,681,
+Mannequin Pussy,2026-08-22,1200,746,
