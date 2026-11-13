@@ -24,7 +24,7 @@ Student project for MIS 480S Strategic Technology Management (Project 2), Bingha
 ## How to use it
 
 1. Paste up to 10 Wikipedia article titles, one per line (article web addresses work too).
-2. Click **Check trends**. Titles are checked first; misspelled titles and disambiguation pages get a message saying what to fix.
+2. Click **Check trends**. Titles are checked first; misspelled titles and disambiguation pages get a message saying what to fix, and an article whose Wikipedia description does not mention music gets a "Check title" warning.
 3. Read the ranked table. Open spike links to see what happened before deciding.
 4. Record Offer, Watch or Pass with a short reason. Click **Export CSV** to keep a copy.
 5. Optional: open **Venue history**, load your past shows (or the constructed sample), and read the **Here before** column and the label check under the table.
@@ -120,7 +120,7 @@ Settings → tick **Test mode: simulate a live-data outage**. The tool skips all
 - It is a free first screen, not a replacement for paid music analytics (for example Chartmetric or Soundcharts) or past ticket sales, which a venue this size may also use.
 - Views of redirect pages are not added to the target article.
 - An article that was created or renamed recently has a shorter history, because views from before a rename stay under the old title (for example, MJ Lenderman's data starts in October 2023).
-- Exact titles are needed; there is no fuzzy artist search.
+- Exact titles are needed; there is no fuzzy artist search. A bare name can lead to another topic with the same name ("Wednesday" is the weekday). The table shows each article's Wikipedia short description and warns when it does not mention music, but the check is a word list, so it can miss a wrong match or warn on a right one.
 - The cached copy is refreshed by hand and can be weeks old; the banner and data-through dates show its age.
 - Decisions and venue history live in one browser and do not sync between devices or people. The CSV export is the backup.
 - The label check rests on few shows, a fixed 90-day lead time and the venue's own records; it shows a pattern, not proof.

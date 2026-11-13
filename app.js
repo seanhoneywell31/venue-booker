@@ -214,7 +214,7 @@
   async function resolveTitles(items) {
     var params = new URLSearchParams({
       action: 'query', format: 'json', formatversion: '2', origin: '*',
-      redirects: '1', prop: 'pageprops', ppprop: 'disambiguation',
+      redirects: '1', prop: 'pageprops|description', ppprop: 'disambiguation',
       titles: items.map(function (i) { return i.title; }).join('|')
     });
     var r;
@@ -232,6 +232,10 @@
     (q.redirects || []).forEach(function (n) { redir[n.from] = n.to; });
     (q.pages || []).forEach(function (p) { pages[p.title] = p; });
 
+    // If no article in the batch has a short description, the service did not send them:
+    // say nothing rather than warn on every row.
+    var haveDescriptions = (q.pages || []).some(function (p) { return typeof p.description === 'string'; });
+
     return { verified: true, items: items.map(function (i) {
       var t = norm[i.title] || i.title;
       var target = redir[t];
@@ -242,8 +246,23 @@
       else if (p.invalid) status = 'invalid';
       else if (p.ns !== 0) status = 'notarticle';
       else if (p.pageprops && Object.prototype.hasOwnProperty.call(p.pageprops, 'disambiguation')) status = 'disambiguation';
-      return { input: i.input, title: i.title, resolved: resolved, redirectedFrom: target ? t : null, status: status };
+      var description = (status === 'ok' && typeof p.description === 'string' && p.description.trim()) ? p.description.trim() : null;
+      var topic = null;
+      if (status === 'ok' && haveDescriptions) topic = !description ? 'nodesc' : (MUSIC_WORDS.test(description) ? null : 'notmusic');
+      return { input: i.input, title: i.title, resolved: resolved, redirectedFrom: target ? t : null, status: status,
+               description: description, topic: topic };
     }) };
+  }
+
+  // Words that show a short description is about a musical act. A word list, so it can miss
+  // or over-warn; the description itself is always shown so the booker can judge.
+  var MUSIC_WORDS = /\b(band|bands|musician|musicians|music|musical|singer|singers|songwriter|rapper|vocalist|guitarist|bassist|drummer|pianist|composer|producer|dj|disc jockey|duo|trio|quartet|group|ensemble|orchestra|choir|collective|artist)\b/i;
+
+  function topicWarning(row) {
+    if (row.topic === 'notmusic') return 'Wikipedia describes this article as "' + row.description + '", which does not mention music. ' +
+      'It may be a different topic with the same name. Open the link to check, or use the artist\'s full title, for example one ending in "(band)" or "(musician)".';
+    if (row.topic === 'nodesc') return 'Wikipedia gives no short description for this article. Open the link to confirm it is about the artist.';
+    return null;
   }
 
   function titleProblem(row) {
@@ -363,6 +382,7 @@
     else if (row.source === 'live') text = name + ': live data, through ' + Trend.isoDay(t.dataThrough) + '.';
     else if (row.source === 'cached') text = name + ': live data failed (' + row.liveError + '); used cached copy, through ' + Trend.isoDay(t.dataThrough) + '.';
     else text = name + ': ' + (row.dataError || 'no data') ;
+    if (row.topic === 'notmusic') text += ' Check title: its description does not mention music.';
     return { title: name, source: row.source || null, liveError: row.liveError || null, text: text };
   }
 
@@ -579,7 +599,7 @@
         retrieved_at: row.retrievedAt || '',
         source: row.series ? SOURCE_TEXT : '',
         article_url: titleProblem(row) ? '' : articleUrl(row.resolved),
-        note: titleProblem(row) || row.dataError || ''
+        note: titleProblem(row) || [topicWarning(row), row.dataError].filter(Boolean).join(' ')
       };
     });
   }
@@ -779,7 +799,10 @@
       var artist = [
         titleOk ? link(articleUrl(row.resolved), row.resolved) : el('span', { text: row.input }),
         row.redirectedFrom ? el('div', { className: 'small', text: 'Redirected from "' + row.redirectedFrom + '"' }) : null,
-        row.status === 'unverified' ? el('div', { className: 'small', text: 'Title not verified; used as typed.' }) : null
+        row.status === 'unverified' ? el('div', { className: 'small', text: 'Title not verified; used as typed.' }) : null,
+        row.description ? el('div', { className: 'small', text: 'Wikipedia: ' + row.description }) : null,
+        row.topic ? el('div', { className: 'row-warn' }, [el('span', { className: 'badge warn', text: 'Check title' }),
+          row.topic === 'notmusic' ? ' The description does not mention music, so this may be a different topic.' : ' No short description on Wikipedia; open the link to confirm.']) : null
       ];
       tbody.appendChild(el('tr', null, [
         el('td', { 'data-label': '#', className: 'num', text: rank >= 0 ? String(rank + 1) : '' }),
@@ -824,6 +847,10 @@
         }
         if (r.status === 'ok') seen[r.resolved] = r.input;
         rows.push(r);
+      });
+      rows.forEach(function (r) {
+        var w = topicWarning(r);
+        if (w) notes.push({ type: 'warn', text: '"' + r.input + '": ' + w });
       });
       showMessages(notes);
       state.rows = rows;
