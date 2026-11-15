@@ -125,6 +125,9 @@ a { color: var(--accent); }
 .badge.warn { background: var(--warn-bg); color: var(--warn); border-color: #f0d49a; }
 .badge.bad { background: var(--bad-bg); color: var(--bad); border-color: #f2b8b1; }
 .badge.flat { background: var(--flat-bg); color: var(--flat); border-color: #cbd3e1; }
+.badge.spike { background: #f3e8ff; color: #5b1a8f; border-color: #d8b4fe; }
+.spike-flag { margin-top: 6px; font-size: 0.85rem; color: var(--ink); }
+.rank-note { margin: 4px 0 10px; }
 
 .site-footer { color: var(--muted); font-size: 0.85rem; padding: 8px 0 28px; }
 

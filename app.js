@@ -514,7 +514,17 @@
       el('div', { className: 'small', text: 'Too little traffic: under ' + state.settings.minViews + ' views a day in both periods.' })];
     if (t.status === 'new') return [el('span', { className: 'badge flat', text: 'No label' }),
       el('div', { className: 'small', text: 'Not enough history: fewer than ' + Trend.MIN_HISTORY + ' days of data a year ago (the article may be new).' })];
-    return [el('span', { className: 'badge ' + BADGE[t.label], text: t.label }), ' ', el('strong', { text: fmtPct(t.changePct) })];
+    var out = [el('span', { className: 'badge ' + BADGE[t.label], text: t.label }), ' ', el('strong', { text: fmtPct(t.changePct) })];
+    // User trials: both testers skipped the spike column, so a spike inside the
+    // latest 90 days (the window that sets the label) is flagged next to the label.
+    var sp = row.analysis.spikes;
+    if (sp && !sp.skipped && sp.recentCount > 0) {
+      out.push(el('div', { className: 'spike-flag' }, [
+        el('span', { className: 'badge spike', text: 'Spike' }),
+        ' ' + Trend.niceDay(sp.events[0].peakDay) + ': check what caused it before offering (Spikes column).'
+      ]));
+    }
+    return out;
   }
 
   function mediansCell(row) {
